@@ -126,6 +126,116 @@ def clean_date(value):
     # Cargo dates may occasionally include a time.
     return value[:10]
 
+def normalize_text(value):
+    """
+    Normalize a value for case-insensitive tournament-name matching.
+    """
+
+    if value is None:
+        return ""
+
+    return str(value).strip().lower().replace("_", " ")
+
+
+def is_first_place(value):
+    """
+    Leaguepedia may represent first place as:
+    1, "1", "1st", or occasionally another textual variation.
+    """
+
+    if value is None:
+        return False
+
+    normalized = str(value).strip().lower()
+
+    return normalized in {
+        "1",
+        "1st",
+        "first",
+        "winner",
+        "champion"
+    }
+
+
+def get_international_title_flags(site, safe_player_id):
+    """
+    Determine whether a player has won First Stand, MSI, or Worlds.
+
+    Leaguepedia does not store these as direct fields on the Players table.
+    Instead, we join:
+
+    TournamentPlayers:
+        Confirms that the player was registered for the tournament team.
+
+    TournamentResults:
+        Confirms that the team finished in first place.
+
+    The tournament OverviewPage is then used to determine which
+    international competition the result belongs to.
+    """
+
+    title_rows = site.cargo_client.query(
+        tables="""
+            TournamentPlayers=TP,
+            TournamentResults=TR
+        """,
+        join_on="""
+            TP.OverviewPage=TR.OverviewPage,
+            TP.Team=TR.Team
+        """,
+        fields="""
+            TP.Player=Player,
+            TP.Team=Team,
+            TP.OverviewPage=TournamentPage,
+            TR.Place=Place
+        """,
+        where=f'''
+            TP.Player="{safe_player_id}"
+            AND (
+                TR.Place="1"
+                OR TR.Place="1st"
+            )
+        ''',
+        limit=500
+    )
+
+    won_first_stand = False
+    won_msi = False
+    won_worlds = False
+
+    for row in title_rows or []:
+        if not is_first_place(row.get("Place")):
+            continue
+
+        tournament_page = normalize_text(
+            row.get("TournamentPage")
+        )
+
+        # First Stand pages generally contain "First Stand".
+        if "first stand" in tournament_page:
+            won_first_stand = True
+
+        # MSI pages may use the full name or MSI abbreviation.
+        if (
+            "mid-season invitational" in tournament_page
+            or "mid season invitational" in tournament_page
+            or tournament_page.endswith(" msi")
+            or "/msi" in tournament_page
+        ):
+            won_msi = True
+
+        # Worlds pages normally use "World Championship".
+        if (
+            "world championship" in tournament_page
+            or "season world championship" in tournament_page
+        ):
+            won_worlds = True
+
+    return {
+        "won_first_stand": won_first_stand,
+        "won_msi": won_msi,
+        "won_worlds": won_worlds
+    }
 
 # ============================================================
 # 4. Log in to Leaguepedia / Fandom
@@ -207,6 +317,7 @@ player_result = site.cargo_client.query(
         Country=Nationality,
         Birthdate=DOB,
         IsRetired=Retired,
+        Image=ImageFile,
         _pageName=PageName
     """,
     where=f'Player="{safe_player_id}"',
@@ -240,7 +351,9 @@ team_history = site.cargo_client.query(
     fields="""
         Tn.Player=Player,
         Tn.Team=Team,
+        Tm.Short=TeamAbbreviation,
         Tm.Region=Region,
+        Tm.Image=TeamLogoFile,
         RCJoin.Role=JoinRole,
         RCLeave.Role=LeaveRole,
         Tn.DateJoin=Start,
@@ -253,6 +366,14 @@ team_history = site.cargo_client.query(
     limit=100
 )
 
+# ============================================================
+# 9B. Retrieve international championship achievements
+# ============================================================
+
+international_titles = get_international_title_flags(
+    site,
+    safe_player_id
+)
 
 # ============================================================
 # 10. Prepare the daily_player row
@@ -267,7 +388,13 @@ daily_player_data = {
     "date_of_birth": clean_date(player.get("DOB")),
     "retired": to_boolean(player.get("Retired")),
     "leaguepedia_page": player.get("PageName") or player_id,
-    "game_date": date.today().isoformat()
+    "image_filename": player.get("ImageFile"),
+    "game_date": date.today().isoformat(),
+
+    # International championship achievements
+    "won_first_stand": international_titles["won_first_stand"],
+    "won_msi": international_titles["won_msi"],
+    "won_worlds": international_titles["won_worlds"]
 }
 
 
@@ -316,20 +443,22 @@ for row in team_history or []:
     )
 
     history_rows.append({
-        "daily_player_id": DAILY_PLAYER_ID,
-        "player_name": row.get("Player") or player_id,
-        "team_name": row.get("Team"),
-        "region": row.get("Region"),
-        "position": position,
-        "start_date": clean_date(row.get("Start")),
-        "end_date": clean_date(row.get("End")),
-        "duration_days": parse_duration_days(
-            row.get("Duration")
-        ),
-        "is_current": to_boolean(
-            row.get("IsCurrent")
-        )
-    })
+    "daily_player_id": DAILY_PLAYER_ID,
+    "player_name": row.get("Player") or player_id,
+    "team_name": row.get("Team"),
+    "team_abbreviation": row.get("TeamAbbreviation"),
+    "team_logo_filename": row.get("TeamLogoFile"),
+    "region": row.get("Region"),
+    "position": position,
+    "start_date": clean_date(row.get("Start")),
+    "end_date": clean_date(row.get("End")),
+    "duration_days": parse_duration_days(
+        row.get("Duration")
+    ),
+    "is_current": to_boolean(
+        row.get("IsCurrent")
+    )
+})
 
 
 # ============================================================
@@ -346,7 +475,22 @@ if history_rows:
 
 
 # ============================================================
-# 15. Confirmation
+# 15. Mark the selected player as unavailable
+# ============================================================
+
+(
+    supabase
+    .table(SUPABASE_TABLE)
+    .update({
+        "Available": False
+    })
+    .eq("Player", player_id)
+    .execute()
+)
+
+
+# ============================================================
+# 16. Confirmation
 # ============================================================
 
 print(
@@ -356,4 +500,8 @@ print(
 
 print(
     f"Team-history rows inserted: {len(history_rows)}"
+)
+
+print(
+    f"Player marked as unavailable: {player_id}"
 )
