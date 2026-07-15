@@ -87,64 +87,172 @@
           </div>
 
           <div class="player-overview">
-            <div class="portrait-frame">
-              <img id="playerImage" alt="Mystery League of Legends pro player" />
-              <div class="portrait-frame__scrim" id="portraitScrim">
-                <span>?</span>
-              </div>
-              <div class="portrait-frame__label" id="playerName">Mystery player</div>
-            </div>
+  <!-- Portrait reveal -->
+  <div class="portrait-frame" data-clue-container="image">
+    <img
+      id="playerImage"
+      alt="Mystery League of Legends pro player"
+      hidden
+    />
 
-            <div class="clue-grid">
-              <div class="clue-card clue-card--wide">
-                <span class="clue-card__icon" aria-hidden="true">◎</span>
-                <span class="clue-card__label">Nationality</span>
-                <strong id="nationality">Loading…</strong>
-              </div>
+    <div class="portrait-frame__scrim" id="portraitScrim">
+      <button
+        class="reveal-button reveal-button--portrait"
+        type="button"
+        data-clue="image"
+        aria-controls="playerImage"
+      >
+        <span class="reveal-button__icon" aria-hidden="true">◉</span>
 
-              <div class="clue-card">
-                <span class="clue-card__icon" aria-hidden="true">◷</span>
-                <span class="clue-card__label">Date of birth</span>
-                <strong id="dob">Loading…</strong>
-              </div>
+        <span class="reveal-button__copy">
+          <strong>Reveal portrait</strong>
+          <small>Show the player's photo</small>
+        </span>
 
-              <div class="clue-card">
-                <span class="clue-card__icon" aria-hidden="true">◇</span>
-                <span class="clue-card__label">Status</span>
-                <strong id="retiredStatus">Loading…</strong>
-              </div>
-            </div>
-          </div>
+        <span class="reveal-button__arrow" aria-hidden="true">→</span>
+      </button>
+    </div>
 
-          <section class="history-section" aria-labelledby="historyHeading">
-            <div class="section-heading">
-              <div>
-                <span class="section-heading__kicker">Career path</span>
-                <h2 id="historyHeading">Team history</h2>
-              </div>
-              <span class="history-count" id="historyCount">0 teams</span>
-            </div>
+    <div class="portrait-frame__label" id="playerName">
+      Mystery player
+    </div>
+  </div>
 
-            <div class="history-table-wrap">
-              <table class="history-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Team</th>
-                    <th scope="col">Role</th>
-                    <th scope="col">Region</th>
-                    <th scope="col">Period</th>
-                  </tr>
-                </thead>
-                <tbody id="historyBody">
-                  <tr>
-                    <td colspan="4">
-                      <div class="table-skeleton"></div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
+  <!-- Text clue reveals -->
+  <div class="clue-grid">
+    <div
+      class="clue-card clue-card--wide"
+      data-clue-container="nationality"
+    >
+      <span class="clue-card__icon" aria-hidden="true">◎</span>
+      <span class="clue-card__label">Nationality</span>
+
+      <button
+        class="reveal-button reveal-button--card"
+        type="button"
+        data-clue="nationality"
+        aria-controls="nationality"
+      >
+        <span class="reveal-button__copy">
+          <strong>Reveal nationality</strong>
+          <small>Discover their home country</small>
+        </span>
+
+        <span class="reveal-button__arrow" aria-hidden="true">→</span>
+      </button>
+
+      <strong class="clue-value" id="nationality" hidden></strong>
+    </div>
+
+    <div class="clue-card" data-clue-container="dob">
+      <span class="clue-card__icon" aria-hidden="true">◷</span>
+      <span class="clue-card__label">Date of birth</span>
+
+      <button
+        class="reveal-button reveal-button--card"
+        type="button"
+        data-clue="dob"
+        aria-controls="dob"
+      >
+        <span class="reveal-button__copy">
+          <strong>Reveal birth date</strong>
+          <small>See the player's age clue</small>
+        </span>
+
+        <span class="reveal-button__arrow" aria-hidden="true">→</span>
+      </button>
+
+      <strong class="clue-value" id="dob" hidden></strong>
+    </div>
+
+    <div class="clue-card" data-clue-container="status">
+      <span class="clue-card__icon" aria-hidden="true">◇</span>
+      <span class="clue-card__label">Status</span>
+
+      <button
+        class="reveal-button reveal-button--card"
+        type="button"
+        data-clue="status"
+        aria-controls="retiredStatus"
+      >
+        <span class="reveal-button__copy">
+          <strong>Reveal status</strong>
+          <small>Active or retired?</small>
+        </span>
+
+        <span class="reveal-button__arrow" aria-hidden="true">→</span>
+      </button>
+
+      <strong class="clue-value" id="retiredStatus" hidden></strong>
+    </div>
+  </div>
+</div>
+
+<section class="history-section" aria-labelledby="historyHeading">
+  <div class="section-heading">
+    <div>
+      <span class="section-heading__kicker">Career path</span>
+      <h2 id="historyHeading">Team history</h2>
+    </div>
+
+    <span class="history-count" id="historyCount">Hidden</span>
+  </div>
+
+  <div
+    class="history-reveal"
+    id="historyReveal"
+    data-clue-container="history"
+  >
+    <div class="history-reveal__decoration" aria-hidden="true">
+      ◈
+    </div>
+
+    <div class="history-reveal__content">
+      <span class="section-heading__kicker">Major clue</span>
+      <h3>Unlock the player's career path</h3>
+
+      <p>
+        Reveal the teams, positions, regions, and periods from the
+        player's professional career.
+      </p>
+
+      <button
+        class="reveal-button reveal-button--history"
+        type="button"
+        data-clue="history"
+        aria-controls="historyTableWrap"
+      >
+        <span class="reveal-button__icon" aria-hidden="true">⌁</span>
+
+        <span class="reveal-button__copy">
+          <strong>Reveal team history</strong>
+          <small>This may be a very strong clue</small>
+        </span>
+
+        <span class="reveal-button__arrow" aria-hidden="true">→</span>
+      </button>
+    </div>
+  </div>
+
+  <div
+    class="history-table-wrap"
+    id="historyTableWrap"
+    hidden
+  >
+    <table class="history-table">
+      <thead>
+        <tr>
+          <th scope="col">Team</th>
+          <th scope="col">Role</th>
+          <th scope="col">Region</th>
+          <th scope="col">Period</th>
+        </tr>
+      </thead>
+
+      <tbody id="historyBody"></tbody>
+    </table>
+  </div>
+</section>
         </article>
       </div>
 
