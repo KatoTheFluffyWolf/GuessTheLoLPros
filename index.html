@@ -5,12 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta
     name="description"
-    content="A daily League of Legends pro-player guessing game."
+    content="A daily League of Legends professional-player guessing game."
   />
   <title>RiftGuess — Daily LoL Player</title>
   <link rel="stylesheet" href="styles.css" />
   <script src="script.js" defer></script>
 </head>
+
 <body>
   <div class="background-orb background-orb--one" aria-hidden="true"></div>
   <div class="background-orb background-orb--two" aria-hidden="true"></div>
@@ -25,10 +26,21 @@
     </a>
 
     <div class="header-actions">
-      <button class="icon-button" id="helpButton" type="button" aria-label="How to play">
+      <button
+        class="icon-button"
+        id="helpButton"
+        type="button"
+        aria-label="How to play"
+      >
         ?
       </button>
-      <button class="icon-button" id="themeButton" type="button" aria-label="Toggle theme">
+
+      <button
+        class="icon-button"
+        id="themeButton"
+        type="button"
+        aria-label="Toggle theme"
+      >
         <span id="themeIcon" aria-hidden="true">☾</span>
       </button>
     </div>
@@ -36,20 +48,25 @@
 
   <main class="page-shell">
     <section class="hero" aria-labelledby="pageTitle">
-      <p class="eyebrow">ONE PLAYER. ONE DAY. ONE SHOT AT GLORY.</p>
+      <p class="eyebrow">ONE PLAYER. ONE DAY. CHOOSE YOUR CLUES.</p>
       <h1 id="pageTitle">Who is today's pro?</h1>
       <p class="hero__copy">
-        Study the portrait and career clues, then name the League of Legends player.
+        Unlock only the clues you need. Every career entry is a separate hint,
+        while the portrait stays hidden until the game is over.
       </p>
     </section>
 
     <section class="game-layout">
       <div class="game-column">
-        <section class="countdown-card" aria-label="Time until the next daily player">
+        <section
+          class="countdown-card"
+          aria-label="Time until the next daily player"
+        >
           <div>
             <span class="countdown-card__label">Next player in</span>
             <strong id="countdown">--:--:--</strong>
           </div>
+
           <div class="countdown-card__meta">
             <span id="gameNumber">Daily challenge</span>
             <span class="status-dot" aria-hidden="true"></span>
@@ -57,9 +74,13 @@
         </section>
 
         <form class="guess-form" id="guessForm" autocomplete="off">
-          <label class="sr-only" for="guessInput">Enter a pro player's name</label>
+          <label class="sr-only" for="guessInput">
+            Enter a professional player's name
+          </label>
+
           <div class="guess-box">
             <span class="guess-box__icon" aria-hidden="true">⌕</span>
+
             <input
               id="guessInput"
               name="guess"
@@ -70,216 +91,331 @@
               aria-expanded="false"
               spellcheck="false"
             />
+
             <button id="submitGuess" type="submit" aria-label="Submit guess">
               <span>Guess</span>
               <span aria-hidden="true">→</span>
             </button>
           </div>
 
-          <div class="suggestions" id="suggestions" role="listbox" hidden></div>
-          <p class="guess-message" id="guessMessage" role="status" aria-live="polite"></p>
+          <div
+            class="suggestions"
+            id="suggestions"
+            role="listbox"
+            hidden
+          ></div>
+
+          <p
+            class="guess-message"
+            id="guessMessage"
+            role="status"
+            aria-live="polite"
+          ></p>
         </form>
 
         <article class="player-card" id="playerCard" aria-busy="true">
           <div class="player-card__topline">
             <span class="difficulty-badge">Daily player</span>
-            <span class="attempt-counter"><strong id="attemptCount">0</strong> attempts</span>
+
+            <div class="player-card__meta">
+              <span class="attempt-counter">
+                <strong id="attemptCount">0</strong> attempts
+              </span>
+              <span class="attempt-counter">
+                <strong id="hintCount">0</strong> hints
+              </span>
+            </div>
           </div>
 
           <div class="player-overview">
-  <!-- Portrait reveal -->
-  <div class="portrait-frame" data-clue-container="image">
-    <img
-      id="playerImage"
-      alt="Mystery League of Legends pro player"
-      hidden
-    />
+            <div class="portrait-frame" id="portraitFrame">
+              <!--
+                The image receives its src only after the game is over.
+                In the real backend version, do not send image_url before a
+                correct guess or a deliberate game-over action.
+              -->
+              <img
+                id="playerImage"
+                alt=""
+                hidden
+              />
 
-    <div class="portrait-frame__scrim" id="portraitScrim">
-      <button
-        class="reveal-button reveal-button--portrait"
-        type="button"
-        data-clue="image"
-        aria-controls="playerImage"
-      >
-        <span class="reveal-button__icon" aria-hidden="true">◉</span>
+              <div class="portrait-frame__scrim" id="portraitScrim">
+                <div class="portrait-lock">
+                  <span class="portrait-lock__icon" aria-hidden="true">◉</span>
+                  <strong>Portrait locked</strong>
+                  <small>Revealed when the game is over</small>
+                </div>
+              </div>
 
-        <span class="reveal-button__copy">
-          <strong>Reveal portrait</strong>
-          <small>Show the player's photo</small>
-        </span>
+              <div class="portrait-frame__label" id="playerName">
+                Mystery player
+              </div>
+            </div>
 
-        <span class="reveal-button__arrow" aria-hidden="true">→</span>
-      </button>
-    </div>
+            <div class="clue-grid" aria-label="General player hints">
+              <article class="clue-card" data-clue-card="nationality">
+                <div class="clue-card__heading">
+                  <span class="clue-card__icon" aria-hidden="true">◎</span>
+                  <span class="clue-card__label">Nationality</span>
+                </div>
 
-    <div class="portrait-frame__label" id="playerName">
-      Mystery player
-    </div>
-  </div>
+                <button
+                  class="clue-unlock-button"
+                  type="button"
+                  data-clue-key="nationality"
+                >
+                  <span>
+                    <strong>Unlock nationality</strong>
+                    <small>Discover the player's home country</small>
+                  </span>
+                  <span aria-hidden="true">→</span>
+                </button>
 
-  <!-- Text clue reveals -->
-  <div class="clue-grid">
-    <div
-      class="clue-card clue-card--wide"
-      data-clue-container="nationality"
-    >
-      <span class="clue-card__icon" aria-hidden="true">◎</span>
-      <span class="clue-card__label">Nationality</span>
+                <strong class="clue-value" data-clue-value="nationality" hidden>
+                  —
+                </strong>
+              </article>
 
-      <button
-        class="reveal-button reveal-button--card"
-        type="button"
-        data-clue="nationality"
-        aria-controls="nationality"
-      >
-        <span class="reveal-button__copy">
-          <strong>Reveal nationality</strong>
-          <small>Discover their home country</small>
-        </span>
+              <article class="clue-card" data-clue-card="dob">
+                <div class="clue-card__heading">
+                  <span class="clue-card__icon" aria-hidden="true">◷</span>
+                  <span class="clue-card__label">Date of birth</span>
+                </div>
 
-        <span class="reveal-button__arrow" aria-hidden="true">→</span>
-      </button>
+                <button
+                  class="clue-unlock-button"
+                  type="button"
+                  data-clue-key="dob"
+                >
+                  <span>
+                    <strong>Unlock birth date</strong>
+                    <small>Use the player's age as a clue</small>
+                  </span>
+                  <span aria-hidden="true">→</span>
+                </button>
 
-      <strong class="clue-value" id="nationality" hidden></strong>
-    </div>
+                <strong class="clue-value" data-clue-value="dob" hidden>
+                  —
+                </strong>
+              </article>
 
-    <div class="clue-card" data-clue-container="dob">
-      <span class="clue-card__icon" aria-hidden="true">◷</span>
-      <span class="clue-card__label">Date of birth</span>
+              <article class="clue-card" data-clue-card="retired">
+                <div class="clue-card__heading">
+                  <span class="clue-card__icon" aria-hidden="true">◇</span>
+                  <span class="clue-card__label">Career status</span>
+                </div>
 
-      <button
-        class="reveal-button reveal-button--card"
-        type="button"
-        data-clue="dob"
-        aria-controls="dob"
-      >
-        <span class="reveal-button__copy">
-          <strong>Reveal birth date</strong>
-          <small>See the player's age clue</small>
-        </span>
+                <button
+                  class="clue-unlock-button"
+                  type="button"
+                  data-clue-key="retired"
+                >
+                  <span>
+                    <strong>Unlock status</strong>
+                    <small>Find out whether they are active or retired</small>
+                  </span>
+                  <span aria-hidden="true">→</span>
+                </button>
 
-        <span class="reveal-button__arrow" aria-hidden="true">→</span>
-      </button>
+                <strong class="clue-value" data-clue-value="retired" hidden>
+                  —
+                </strong>
+              </article>
+            </div>
+          </div>
 
-      <strong class="clue-value" id="dob" hidden></strong>
-    </div>
 
-    <div class="clue-card" data-clue-container="status">
-      <span class="clue-card__icon" aria-hidden="true">◇</span>
-      <span class="clue-card__label">Status</span>
+          <section
+            class="achievement-section"
+            aria-labelledby="achievementHeading"
+          >
+            <div class="section-heading achievement-section__heading">
+              <div>
+                <span class="section-heading__kicker">International stage</span>
+                <h2 id="achievementHeading">Major titles</h2>
+                <p class="section-heading__copy">
+                  Unlock each tournament separately to learn whether the player
+                  has won it at least once during their career.
+                </p>
+              </div>
+            </div>
 
-      <button
-        class="reveal-button reveal-button--card"
-        type="button"
-        data-clue="status"
-        aria-controls="retiredStatus"
-      >
-        <span class="reveal-button__copy">
-          <strong>Reveal status</strong>
-          <small>Active or retired?</small>
-        </span>
+            <div class="achievement-grid" aria-label="International title hints">
+              <article
+                class="clue-card achievement-card"
+                data-clue-card="won_first_stand"
+              >
+                <div class="clue-card__heading">
+                  <span class="clue-card__icon" aria-hidden="true">◆</span>
+                  <span class="clue-card__label">First Stand</span>
+                </div>
 
-        <span class="reveal-button__arrow" aria-hidden="true">→</span>
-      </button>
+                <button
+                  class="clue-unlock-button"
+                  type="button"
+                  data-clue-key="won_first_stand"
+                >
+                  <span>
+                    <strong>Unlock First Stand record</strong>
+                    <small>Has this player ever lifted the First Stand trophy?</small>
+                  </span>
+                  <span aria-hidden="true">→</span>
+                </button>
 
-      <strong class="clue-value" id="retiredStatus" hidden></strong>
-    </div>
-  </div>
-</div>
+                <strong
+                  class="clue-value achievement-value"
+                  data-clue-value="won_first_stand"
+                  hidden
+                >
+                  —
+                </strong>
+              </article>
 
-<section class="history-section" aria-labelledby="historyHeading">
-  <div class="section-heading">
-    <div>
-      <span class="section-heading__kicker">Career path</span>
-      <h2 id="historyHeading">Team history</h2>
-    </div>
+              <article
+                class="clue-card achievement-card"
+                data-clue-card="won_msi"
+              >
+                <div class="clue-card__heading">
+                  <span class="clue-card__icon" aria-hidden="true">✦</span>
+                  <span class="clue-card__label">MSI</span>
+                </div>
 
-    <span class="history-count" id="historyCount">Hidden</span>
-  </div>
+                <button
+                  class="clue-unlock-button"
+                  type="button"
+                  data-clue-key="won_msi"
+                >
+                  <span>
+                    <strong>Unlock MSI record</strong>
+                    <small>Find out whether the player has won MSI</small>
+                  </span>
+                  <span aria-hidden="true">→</span>
+                </button>
 
-  <div
-    class="history-reveal"
-    id="historyReveal"
-    data-clue-container="history"
-  >
-    <div class="history-reveal__decoration" aria-hidden="true">
-      ◈
-    </div>
+                <strong
+                  class="clue-value achievement-value"
+                  data-clue-value="won_msi"
+                  hidden
+                >
+                  —
+                </strong>
+              </article>
 
-    <div class="history-reveal__content">
-      <span class="section-heading__kicker">Major clue</span>
-      <h3>Unlock the player's career path</h3>
+              <article
+                class="clue-card achievement-card"
+                data-clue-card="won_worlds"
+              >
+                <div class="clue-card__heading">
+                  <span class="clue-card__icon" aria-hidden="true">♛</span>
+                  <span class="clue-card__label">Worlds</span>
+                </div>
 
-      <p>
-        Reveal the teams, positions, regions, and periods from the
-        player's professional career.
-      </p>
+                <button
+                  class="clue-unlock-button"
+                  type="button"
+                  data-clue-key="won_worlds"
+                >
+                  <span>
+                    <strong>Unlock Worlds record</strong>
+                    <small>Has this player become a World Champion?</small>
+                  </span>
+                  <span aria-hidden="true">→</span>
+                </button>
 
-      <button
-        class="reveal-button reveal-button--history"
-        type="button"
-        data-clue="history"
-        aria-controls="historyTableWrap"
-      >
-        <span class="reveal-button__icon" aria-hidden="true">⌁</span>
+                <strong
+                  class="clue-value achievement-value"
+                  data-clue-value="won_worlds"
+                  hidden
+                >
+                  —
+                </strong>
+              </article>
+            </div>
+          </section>
 
-        <span class="reveal-button__copy">
-          <strong>Reveal team history</strong>
-          <small>This may be a very strong clue</small>
-        </span>
+          <section class="history-section" aria-labelledby="historyHeading">
+            <div class="section-heading">
+              <div>
+                <span class="section-heading__kicker">Career path</span>
+                <h2 id="historyHeading">Team history</h2>
+                <p class="section-heading__copy">
+                  Each database row is one independent hint. Unlock the entry
+                  you think will be the most useful.
+                </p>
+              </div>
 
-        <span class="reveal-button__arrow" aria-hidden="true">→</span>
-      </button>
-    </div>
-  </div>
+              <span class="history-count" id="historyCount">0 / 0 unlocked</span>
+            </div>
 
-  <div
-    class="history-table-wrap"
-    id="historyTableWrap"
-    hidden
-  >
-    <table class="history-table">
-      <thead>
-        <tr>
-          <th scope="col">Team</th>
-          <th scope="col">Role</th>
-          <th scope="col">Region</th>
-          <th scope="col">Period</th>
-        </tr>
-      </thead>
+            <div class="history-table-wrap">
+              <table class="history-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Team</th>
+                    <th scope="col">Role</th>
+                    <th scope="col">Region</th>
+                    <th scope="col">Period</th>
+                    <th scope="col">Hint</th>
+                  </tr>
+                </thead>
 
-      <tbody id="historyBody"></tbody>
-    </table>
-  </div>
-</section>
+                <tbody id="historyBody">
+                  <tr>
+                    <td colspan="5">
+                      <div class="table-skeleton"></div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
         </article>
       </div>
 
       <aside class="side-panel">
         <section class="panel-card progress-card">
           <span class="panel-card__kicker">Today's run</span>
+
           <div class="progress-card__score">
             <strong id="progressScore">0</strong>
             <span>guesses</span>
           </div>
+
           <div class="progress-track" aria-hidden="true">
             <span id="progressFill"></span>
           </div>
+
           <p id="progressText">Your first guess is waiting.</p>
+
+          <div class="run-stats">
+            <div>
+              <span>Hints unlocked</span>
+              <strong id="sideHintCount">0</strong>
+            </div>
+            <div>
+              <span>History revealed</span>
+              <strong id="historyUnlockedCount">0</strong>
+            </div>
+          </div>
         </section>
 
         <section class="panel-card mini-rules">
           <span class="panel-card__kicker">How to play</span>
-          <h2>Read the clues. Find the pro.</h2>
+          <h2>Spend your clues carefully.</h2>
           <ol>
-            <li>Use the portrait and career information.</li>
-            <li>Choose a player from the suggestion list.</li>
-            <li>Come back tomorrow for a new challenge.</li>
+            <li>Unlock basic information and international-title records separately.</li>
+            <li>Every team-history entry is its own selectable hint.</li>
+            <li>The portrait and player name appear only after the game ends.</li>
           </ol>
         </section>
 
-        <button class="share-button" id="shareButton" type="button" disabled>
+        <button
+          class="share-button"
+          id="shareButton"
+          type="button"
+          disabled
+        >
           <span aria-hidden="true">↗</span>
           Share result
         </button>
@@ -288,16 +424,33 @@
   </main>
 
   <dialog class="help-dialog" id="helpDialog">
-    <button class="dialog-close" id="closeHelpButton" type="button" aria-label="Close">×</button>
+    <button
+      class="dialog-close"
+      id="closeHelpButton"
+      type="button"
+      aria-label="Close"
+    >
+      ×
+    </button>
+
     <span class="panel-card__kicker">How to play</span>
     <h2>Guess the daily pro player</h2>
+
     <p>
-      The portrait, nationality, date of birth, current status, and team history all belong
-      to one professional League of Legends player. Enter the player's in-game name to win.
+      The portrait is not a purchasable or unlockable hint. It remains hidden
+      throughout the game and is revealed together with the player's name when
+      the answer is correct.
     </p>
+
     <p>
-      A new challenge appears every day. Your result is saved in this browser so refreshing
-      the page will not erase your run.
+      Nationality, date of birth, career status, First Stand, MSI, and Worlds can
+      all be unlocked separately. Team history is even more granular: each career entry has its own unlock
+      button, so revealing one team does not reveal the rest.
+    </p>
+
+    <p>
+      This demo stores your attempts and unlocked hints in this browser so a
+      refresh does not erase the current daily run.
     </p>
   </dialog>
 
