@@ -22,8 +22,8 @@
 */
 
 const CONFIG = {
-  apiBaseUrl: "",
-  useDemoData: true,
+  apiBaseUrl: "https://pnhyxe4nebxsrufkcanvsufpiu0pyjta.lambda-url.ap-southeast-2.on.aws/",
+  useDemoData: false,
   resetHourUTC: 17,
   maxProgressGuesses: 6,
 };
