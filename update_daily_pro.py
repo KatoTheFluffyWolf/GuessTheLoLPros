@@ -22,7 +22,7 @@ BOT_PASSWORD_NAME = os.getenv("BOT_PASSWORD_NAME")
 BOT_PASSWORD_SECRET = os.getenv("BOT_PASSWORD_SECRET")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 # This is the existing table containing the list of players
 # from which the random daily player is selected.
@@ -237,271 +237,398 @@ def get_international_title_flags(site, safe_player_id):
         "won_worlds": won_worlds
     }
 
-# ============================================================
-# 4. Log in to Leaguepedia / Fandom
-# ============================================================
+def get_player_image_filename(site, player_page, players_image=None):
+    """
+    Get a player's portrait filename.
 
-credentials = AuthCredentials(
-    username=f"{FANDOM_USERNAME}@{BOT_PASSWORD_NAME}",
-    password=BOT_PASSWORD_SECRET
-)
+    Priority:
+    1. Players.Image
+    2. Latest profile image from PlayerImages
+    3. Latest available image from PlayerImages
+    """
 
-site = EsportsClient(
-    "lol",
-    credentials=credentials
-)
+    # First use the normal Players.Image field.
+    if players_image and str(players_image).strip():
+        return str(players_image).strip()
+
+    safe_page = (
+        str(player_page)
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+    )
+
+    print(
+        f'Players.Image is empty for "{player_page}". '
+        "Checking PlayerImages..."
+    )
+
+    # Prefer an image explicitly marked as a profile image.
+    profile_images = site.cargo_client.query(
+        tables="PlayerImages",
+        fields="""
+            Link,
+            FileName,
+            IsProfileImage,
+            SortDate,
+            Team,
+            Tournament,
+            ImageType
+        """,
+        where=f'''
+            Link="{safe_page}"
+            AND IsProfileImage="1"
+        ''',
+        order_by="SortDate DESC",
+        limit=1
+    )
+
+    print("\n========== PROFILE IMAGE RESULTS ==========")
+    print(profile_images)
+
+    if profile_images:
+        filename = profile_images[0].get("FileName")
+
+        if filename and str(filename).strip():
+            return str(filename).strip()
+
+    # If none is marked as the profile image, use the newest available image.
+    available_images = site.cargo_client.query(
+        tables="PlayerImages",
+        fields="""
+            Link,
+            FileName,
+            IsProfileImage,
+            SortDate,
+            Team,
+            Tournament,
+            ImageType
+        """,
+        where=f'Link="{safe_page}"',
+        order_by="SortDate DESC",
+        limit=20
+    )
+
+    print("\n========== ALL PLAYER IMAGE RESULTS ==========")
+
+    for index, row in enumerate(available_images or [], start=1):
+        print(f"\nImage {index}:")
+        print("Filename:", repr(row.get("FileName")))
+        print("Profile image:", repr(row.get("IsProfileImage")))
+        print("Date:", repr(row.get("SortDate")))
+        print("Team:", repr(row.get("Team")))
+        print("Tournament:", repr(row.get("Tournament")))
+        print("Image type:", repr(row.get("ImageType")))
+
+    for row in available_images or []:
+        filename = row.get("FileName")
+
+        if filename and str(filename).strip():
+            return str(filename).strip()
+
+    return None
 
 
-# ============================================================
-# 5. Connect to Supabase
-# ============================================================
+def update_daily_player() -> None:
+    """
+    Select a new available player, retrieve their Leaguepedia data,
+    replace the current daily player and team history in Supabase,
+    and mark the selected player as unavailable.
 
-supabase: Client = create_client(
-    SUPABASE_URL,
-    SUPABASE_KEY
-)
+    This function intentionally returns nothing. It raises an exception
+    when the update cannot be completed, allowing the caller in main.py
+    to handle the error.
+    """
 
+    # ============================================================
+    # 4. Log in to Leaguepedia / Fandom
+    # ============================================================
 
-# ============================================================
-# 6. Retrieve available players from the source table
-# ============================================================
+    credentials = AuthCredentials(
+        username=f"{FANDOM_USERNAME}@{BOT_PASSWORD_NAME}",
+        password=BOT_PASSWORD_SECRET
+    )
 
-response = (
-    supabase
-    .table(SUPABASE_TABLE)
-    .select("Player, Nationality, Leaguepedia, Available")
-    .eq("Available", True)
-    .not_.is_("Player", "null")
-    .execute()
-)
-
-player_rows = response.data or []
-
-valid_player_rows = [
-    row
-    for row in player_rows
-    if row.get("Player")
-    and str(row["Player"]).strip()
-]
-
-if not valid_player_rows:
-    raise RuntimeError(
-        "No available players were found in "
-        f"the '{SUPABASE_TABLE}' table."
+    site = EsportsClient(
+        "lol",
+        credentials=credentials
     )
 
 
-# ============================================================
-# 7. Randomly select one available player
-# ============================================================
+    # ============================================================
+    # 5. Connect to Supabase
+    # ============================================================
 
-selected_row = random.choice(valid_player_rows)
-
-player_id = str(selected_row["Player"]).strip()
-
-safe_player_id = (
-    player_id
-    .replace("\\", "\\\\")
-    .replace('"', '\\"')
-)
-
-
-# ============================================================
-# 8. Retrieve player information from Leaguepedia
-# ============================================================
-
-player_result = site.cargo_client.query(
-    tables="Players",
-    fields="""
-        Player,
-        Country=Nationality,
-        Birthdate=DOB,
-        IsRetired=Retired,
-        Image=ImageFile,
-        _pageName=PageName
-    """,
-    where=f'Player="{safe_player_id}"',
-    limit=1
-)
-
-if not player_result:
-    raise RuntimeError(
-        f"No Leaguepedia player record was found for: {player_id}"
+    supabase: Client = create_client(
+        SUPABASE_URL,
+        SUPABASE_KEY
     )
 
-player = player_result[0]
 
+    # ============================================================
+    # 6. Retrieve available players from the source table
+    # ============================================================
 
-# ============================================================
-# 9. Retrieve team history
-# ============================================================
-
-team_history = site.cargo_client.query(
-    tables="""
-        Tenures=Tn,
-        Teams=Tm,
-        RosterChanges=RCJoin,
-        RosterChanges=RCLeave
-    """,
-    join_on="""
-        Tn.Team=Tm.Name,
-        Tn.RosterChangeIdJoin=RCJoin.RosterChangeId,
-        Tn.RosterChangeIdLeave=RCLeave.RosterChangeId
-    """,
-    fields="""
-        Tn.Player=Player,
-        Tn.Team=Team,
-        Tm.Short=TeamAbbreviation,
-        Tm.Region=Region,
-        Tm.Image=TeamLogoFile,
-        RCJoin.Role=JoinRole,
-        RCLeave.Role=LeaveRole,
-        Tn.DateJoin=Start,
-        Tn.DateLeave=End,
-        Tn.Duration=Duration,
-        Tn.IsCurrent=IsCurrent
-    """,
-    where=f'Tn.Player="{safe_player_id}"',
-    order_by="Tn.DateJoin ASC",
-    limit=100
-)
-
-# ============================================================
-# 9B. Retrieve international championship achievements
-# ============================================================
-
-international_titles = get_international_title_flags(
-    site,
-    safe_player_id
-)
-
-# ============================================================
-# 10. Prepare the daily_player row
-# ============================================================
-
-DAILY_PLAYER_ID = 1
-
-daily_player_data = {
-    "id": DAILY_PLAYER_ID,
-    "player_name": player.get("Player") or player_id,
-    "nationality": player.get("Nationality"),
-    "date_of_birth": clean_date(player.get("DOB")),
-    "retired": to_boolean(player.get("Retired")),
-    "leaguepedia_page": player.get("PageName") or player_id,
-    "image_filename": player.get("ImageFile"),
-    "game_date": date.today().isoformat(),
-
-    # International championship achievements
-    "won_first_stand": international_titles["won_first_stand"],
-    "won_msi": international_titles["won_msi"],
-    "won_worlds": international_titles["won_worlds"]
-}
-
-
-# ============================================================
-# 11. Upsert the daily player into row ID 1
-# ============================================================
-
-daily_player_response = (
-    supabase
-    .table("daily_player")
-    .upsert(
-        daily_player_data,
-        on_conflict="id"
-    )
-    .execute()
-)
-
-
-# ============================================================
-# 12. Delete the previous daily player's team history
-# ============================================================
-
-# This ensures history rows belonging to yesterday's player
-# do not remain in the table.
-(
-    supabase
-    .table("daily_player_history")
-    .delete()
-    .eq("daily_player_id", DAILY_PLAYER_ID)
-    .execute()
-)
-
-
-# ============================================================
-# 13. Prepare the new team-history rows
-# ============================================================
-
-history_rows = []
-
-for row in team_history or []:
-    # Completed tenures usually have LeaveRole.
-    # Current tenures may only have JoinRole.
-    position = (
-        row.get("LeaveRole")
-        or row.get("JoinRole")
-    )
-
-    history_rows.append({
-    "daily_player_id": DAILY_PLAYER_ID,
-    "player_name": row.get("Player") or player_id,
-    "team_name": row.get("Team"),
-    "team_abbreviation": row.get("TeamAbbreviation"),
-    "team_logo_filename": row.get("TeamLogoFile"),
-    "region": row.get("Region"),
-    "position": position,
-    "start_date": clean_date(row.get("Start")),
-    "end_date": clean_date(row.get("End")),
-    "duration_days": parse_duration_days(
-        row.get("Duration")
-    ),
-    "is_current": to_boolean(
-        row.get("IsCurrent")
-    )
-})
-
-
-# ============================================================
-# 14. Insert the new team history
-# ============================================================
-
-if history_rows:
-    (
+    response = (
         supabase
-        .table("daily_player_history")
-        .insert(history_rows)
+        .table(SUPABASE_TABLE)
+        .select("Player, Nationality, Leaguepedia, Available")
+        .eq("Available", True)
+        .not_.is_("Player", "null")
+        .execute()
+    )
+
+    player_rows = response.data or []
+
+    valid_player_rows = [
+        row
+        for row in player_rows
+        if row.get("Player")
+        and str(row["Player"]).strip()
+    ]
+
+    if not valid_player_rows:
+        raise RuntimeError(
+            "No available players were found in "
+            f"the '{SUPABASE_TABLE}' table."
+        )
+
+
+    # ============================================================
+    # 7. Randomly select one available player
+    # ============================================================
+
+    selected_row = random.choice(valid_player_rows)
+
+    player_id = str(selected_row["Player"]).strip()
+
+    safe_player_id = (
+        player_id
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+    )
+
+
+    # ============================================================
+    # 8. Retrieve player information from Leaguepedia
+    # ============================================================
+
+    player_result = site.cargo_client.query(
+        tables="Players",
+        fields="""
+            Player,
+            Country=Nationality,
+            Birthdate=DOB,
+            IsRetired=Retired,
+            Image=ImageFile,
+            _pageName=PageName
+        """,
+        where=f'Player="{safe_player_id}"',
+        limit=1
+    )
+
+    if not player_result:
+        raise RuntimeError(
+            f"No Leaguepedia player record was found for: {player_id}"
+        )
+
+    player = player_result[0]
+
+    image_filename = get_player_image_filename(
+        site=site,
+        player_page=player.get("PageName") or player_id,
+        players_image=player.get("ImageFile")
+    )
+
+
+    # ============================================================
+    # 9. Retrieve team history
+    # ============================================================
+
+    team_history = site.cargo_client.query(
+        tables="""
+            Tenures=Tn,
+            Teams=Tm,
+            RosterChanges=RCJoin,
+            RosterChanges=RCLeave
+        """,
+        join_on="""
+            Tn.Team=Tm.Name,
+            Tn.RosterChangeIdJoin=RCJoin.RosterChangeId,
+            Tn.RosterChangeIdLeave=RCLeave.RosterChangeId
+        """,
+        fields="""
+            Tn.Player=Player,
+            Tn.Team=Team,
+            Tm.Short=TeamAbbreviation,
+            Tm.Region=Region,
+            Tm.Image=TeamLogoFile,
+            RCJoin.Role=JoinRole,
+            RCLeave.Role=LeaveRole,
+            Tn.DateJoin=Start,
+            Tn.DateLeave=End,
+            Tn.Duration=Duration,
+            Tn.IsCurrent=IsCurrent
+        """,
+        where=f'Tn.Player="{safe_player_id}"',
+        order_by="Tn.DateJoin ASC",
+        limit=100
+    )
+
+    # ============================================================
+    # 9B. Retrieve international championship achievements
+    # ============================================================
+
+    international_titles = get_international_title_flags(
+        site,
+        safe_player_id
+    )
+
+    # ============================================================
+    # 10. Prepare the daily_player row
+    # ============================================================
+
+    DAILY_PLAYER_ID = 1
+
+    daily_player_data = {
+        "id": DAILY_PLAYER_ID,
+        "player_name": player.get("Player") or player_id,
+        "nationality": player.get("Nationality"),
+        "date_of_birth": clean_date(player.get("DOB")),
+        "retired": to_boolean(player.get("Retired")),
+        "leaguepedia_page": player.get("PageName") or player_id,
+        "image_filename": image_filename,
+        "game_date": date.today().isoformat(),
+
+        # International championship achievements
+        "won_first_stand": international_titles["won_first_stand"],
+        "won_msi": international_titles["won_msi"],
+        "won_worlds": international_titles["won_worlds"]
+    }
+
+
+    # ============================================================
+    # 11. Upsert the daily player into row ID 1
+    # ============================================================
+
+    daily_player_response = (
+        supabase
+        .table("daily_player")
+        .upsert(
+            daily_player_data,
+            on_conflict="id"
+        )
         .execute()
     )
 
 
-# ============================================================
-# 15. Mark the selected player as unavailable
-# ============================================================
+    # ============================================================
+    # 12. Delete the previous daily player's team history
+    # ============================================================
 
-(
-    supabase
-    .table(SUPABASE_TABLE)
-    .update({
-        "Available": False
+    # This ensures history rows belonging to yesterday's player
+    # do not remain in the table.
+    (
+        supabase
+        .table("daily_player_history")
+        .delete()
+        .eq("daily_player_id", DAILY_PLAYER_ID)
+        .execute()
+    )
+
+
+    # ============================================================
+    # 13. Prepare the new team-history rows
+    # ============================================================
+
+    history_rows = []
+
+    for row in team_history or []:
+        # Completed tenures usually have LeaveRole.
+        # Current tenures may only have JoinRole.
+        position = (
+            row.get("LeaveRole")
+            or row.get("JoinRole")
+        )
+
+        history_rows.append({
+        "daily_player_id": DAILY_PLAYER_ID,
+        "player_name": row.get("Player") or player_id,
+        "team_name": row.get("Team"),
+        "team_abbreviation": row.get("TeamAbbreviation"),
+        "team_logo_filename": row.get("TeamLogoFile"),
+        "region": row.get("Region"),
+        "position": position,
+        "start_date": clean_date(row.get("Start")),
+        "end_date": clean_date(row.get("End")),
+        "duration_days": parse_duration_days(
+            row.get("Duration")
+        ),
+        "is_current": to_boolean(
+            row.get("IsCurrent")
+        )
     })
-    .eq("Player", player_id)
-    .execute()
-)
 
 
-# ============================================================
-# 16. Confirmation
-# ============================================================
+    # ============================================================
+    # 14. Insert the new team history
+    # ============================================================
 
-print(
-    f"Daily player updated successfully: "
-    f"{daily_player_data['player_name']}"
-)
+    if history_rows:
+        (
+            supabase
+            .table("daily_player_history")
+            .insert(history_rows)
+            .execute()
+        )
 
-print(
-    f"Team-history rows inserted: {len(history_rows)}"
-)
 
-print(
-    f"Player marked as unavailable: {player_id}"
-)
+    # ============================================================
+    # 15. Mark the selected player as unavailable
+    # ============================================================
+
+    (
+        supabase
+        .table(SUPABASE_TABLE)
+        .update({
+            "Available": False
+        })
+        .eq("Player", player_id)
+        .execute()
+    )
+
+
+    # ============================================================
+    # 16. Confirmation
+    # ============================================================
+
+    print(
+        f"Daily player updated successfully: "
+        f"{daily_player_data['player_name']}"
+    )
+
+    print(
+        f"Team-history rows inserted: {len(history_rows)}"
+    )
+
+    print(
+        f"Player marked as unavailable: {player_id}"
+    )
+    print("\n========== RETRIEVED PLAYER INFO ==========")
+    print("Player:", player.get("Player"))
+    print("Nationality:", player.get("Nationality"))
+    print("Date of birth:", player.get("DOB"))
+    print("Retired:", player.get("Retired"))
+    print("Image filename:", player.get("ImageFile"))
+    print("Leaguepedia page:", player.get("PageName"))
+
+    print("\n========== FINAL IMAGE RESULT ==========")
+    print("Players.Image:", repr(player.get("ImageFile")))
+    print("Selected image filename:", repr(image_filename))
+
+    print("\nAll player fields:")
+    print(player)
+
+
+if __name__ == "__main__":
+    # Allows this file to still be run manually for local testing.
+    update_daily_player()
