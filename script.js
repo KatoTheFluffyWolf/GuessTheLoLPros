@@ -2,10 +2,22 @@
 
 const CONFIG = {
     apiBaseUrl: "https://pnhyxe4nebxsrufkcanvsufpiu0pyjta.lambda-url.ap-southeast-2.on.aws",
+    leaguepediaFileRedirectBaseUrl: "https://lol.fandom.com/wiki/Special:Redirect/file/",
     useDemoData: !1,
     resetHourUTC: 17,
     maxProgressGuesses: 6,
-    sessionPollIntervalMs: 3e4
+    sessionPollIntervalMs: 3e4,
+    startingPoints: 100,
+    historyHintCost: 20,
+    activeLatestHistoryCost: 35,
+    clueCosts: {
+        nationality: 10,
+        dob: 15,
+        retired: 10,
+        won_first_stand: 15,
+        won_msi: 15,
+        won_worlds: 15
+    }
 }, DEMO_SECRET_PLAYER = {
     game_number: 1,
     game_date: "2026-07-17",
@@ -62,6 +74,7 @@ const CONFIG = {
     playerNames: [],
     attempts: 0,
     hintsUsed: 0,
+    pointsRemaining: CONFIG.startingPoints,
     solved: !1,
     revealedName: "",
     revealedImageUrl: "",
@@ -70,6 +83,7 @@ const CONFIG = {
     revealedHistory: new Map,
     manuallyUnlockedClues: new Set,
     manuallyUnlockedHistoryIds: new Set,
+    historyPurchaseCosts: new Map,
     activeSuggestionIndex: -1
 }, elements = {
     playerCard: document.querySelector("#playerCard"),
@@ -89,6 +103,10 @@ const CONFIG = {
     attemptCount: document.querySelector("#attemptCount"),
     hintCount: document.querySelector("#hintCount"),
     sideHintCount: document.querySelector("#sideHintCount"),
+    topPoints: document.querySelector("#topPoints"),
+    pointsRemaining: document.querySelector("#pointsRemaining"),
+    startingPoints: document.querySelector("#startingPoints"),
+    pointsSpent: document.querySelector("#pointsSpent"),
     progressScore: document.querySelector("#progressScore"),
     progressFill: document.querySelector("#progressFill"),
     progressText: document.querySelector("#progressText"),
@@ -105,6 +123,86 @@ let toastTimer;
 
 function normalizeName(value) {
     return String(value).trim().toLocaleLowerCase().replace(/\s+/g, " ");
+}
+
+function getClueCost(clueKey) {
+    return Number(CONFIG.clueCosts[clueKey]) || 0;
+}
+
+function getHistorySlots() {
+    return Array.isArray(state.player?.history_slots) ? state.player.history_slots : [];
+}
+
+function getLatestHistorySlot() {
+    const slots = getHistorySlots();
+    if (0 === slots.length) return null;
+    return slots.reduce((latest, slot) => {
+        const latestOrder = Number(latest?.order) || 0;
+        const slotOrder = Number(slot?.order) || 0;
+        return slotOrder >= latestOrder ? slot : latest;
+    }, slots[0]);
+}
+
+function isLatestHistoryId(historyId) {
+    const latestSlot = getLatestHistorySlot();
+    return Boolean(latestSlot) && Number(latestSlot.id) === Number(historyId);
+}
+
+function parseRetiredStatus(value) {
+    if ("boolean" === typeof value) return value;
+    if ("string" === typeof value) {
+        const normalized = value.trim().toLowerCase();
+        if ([ "true", "retired", "yes", "1" ].includes(normalized)) return !0;
+        if ([ "false", "active", "not retired", "no", "0" ].includes(normalized)) return !1;
+    }
+    return Boolean(value);
+}
+
+function getRevealedRetiredStatus() {
+    return state.revealedClues.has("retired") ? parseRetiredStatus(state.revealedClues.get("retired")) : null;
+}
+
+function isActiveLatestHistory(historyId) {
+    return isLatestHistoryId(historyId) && !1 === getRevealedRetiredStatus();
+}
+
+function getHistoryHintCost(historyId = null) {
+    const baseCost = Number(CONFIG.historyHintCost) || 0;
+    if (null === historyId || void 0 === historyId) return baseCost;
+    return isActiveLatestHistory(historyId) ? Math.max(baseCost, Number(CONFIG.activeLatestHistoryCost) || baseCost) : baseCost;
+}
+
+function getPointsSpent() {
+    return Math.max(0, CONFIG.startingPoints - state.pointsRemaining);
+}
+
+function canAfford(cost) {
+    return state.pointsRemaining >= cost;
+}
+
+function reservePoints(cost) {
+    if (!canAfford(cost)) return !1;
+    state.pointsRemaining = Math.max(0, state.pointsRemaining - cost);
+    return !0;
+}
+
+function refundPoints(cost) {
+    state.pointsRemaining = Math.min(CONFIG.startingPoints, state.pointsRemaining + cost);
+}
+
+function calculateSavedHintSpend() {
+    const clueSpend = [ ...state.manuallyUnlockedClues ].reduce((total, clueKey) => {
+        return total + getClueCost(clueKey);
+    }, 0);
+    const historySpend = [ ...state.manuallyUnlockedHistoryIds ].reduce((total, historyId) => {
+        const savedCost = Number(state.historyPurchaseCosts.get(Number(historyId)));
+        return total + (Number.isFinite(savedCost) ? savedCost : getHistoryHintCost(historyId));
+    }, 0);
+    return clueSpend + historySpend;
+}
+
+function formatPointCost(cost) {
+    return `${cost} ${1 === cost ? "pt" : "pts"}`;
 }
 
 function createDemoPortrait(label) {
@@ -207,12 +305,14 @@ function saveProgress() {
     const payload = {
         attempts: state.attempts,
         hintsUsed: state.hintsUsed,
+        pointsRemaining: state.pointsRemaining,
         solved: state.solved,
         revealedName: state.revealedName,
         revealedImageUrl: state.revealedImageUrl,
         solveToken: state.solveToken,
         manuallyUnlockedClues: [ ...state.manuallyUnlockedClues ],
-        manuallyUnlockedHistoryIds: [ ...state.manuallyUnlockedHistoryIds ]
+        manuallyUnlockedHistoryIds: [ ...state.manuallyUnlockedHistoryIds ],
+        historyPurchaseCosts: Object.fromEntries(state.historyPurchaseCosts)
     };
     localStorage.setItem(getStorageKey(), JSON.stringify(payload));
 }
@@ -226,7 +326,10 @@ function restoreProgress() {
         state.solved = Boolean(saved.solved), state.revealedName = saved.revealedName || "", 
         state.revealedImageUrl = saved.revealedImageUrl || "", state.solveToken = saved.solveToken || "", 
         state.manuallyUnlockedClues = new Set(Array.isArray(saved.manuallyUnlockedClues) ? saved.manuallyUnlockedClues : []), 
-        state.manuallyUnlockedHistoryIds = new Set(Array.isArray(saved.manuallyUnlockedHistoryIds) ? saved.manuallyUnlockedHistoryIds.map(Number) : []);
+        state.manuallyUnlockedHistoryIds = new Set(Array.isArray(saved.manuallyUnlockedHistoryIds) ? saved.manuallyUnlockedHistoryIds.map(Number) : []),
+        state.historyPurchaseCosts = new Map(Object.entries(saved.historyPurchaseCosts || {}).map(([historyId, cost]) => [ Number(historyId), Number(cost) ]));
+        const savedPoints = Number(saved.pointsRemaining), calculatedPoints = CONFIG.startingPoints - calculateSavedHintSpend();
+        state.pointsRemaining = Number.isFinite(savedPoints) ? Math.max(0, Math.min(CONFIG.startingPoints, savedPoints)) : Math.max(0, calculatedPoints);
     } catch (error) {
         console.warn("Could not restore the saved game state.", error);
     }
@@ -392,38 +495,53 @@ async function restoreSolvedGame() {
 
 function renderGeneralClues() {
     document.querySelectorAll("[data-clue-card]").forEach(card => {
-        const clueKey = card.dataset.clueCard, button = card.querySelector("[data-clue-key]"), valueElement = card.querySelector("[data-clue-value]");
+        const clueKey = card.dataset.clueCard, button = card.querySelector("[data-clue-key]"), valueElement = card.querySelector("[data-clue-value]"), costElement = card.querySelector("[data-clue-cost]");
         if (!button || !valueElement) return;
-        const hasValue = state.revealedClues.has(clueKey);
-        card.classList.toggle("is-revealed", hasValue), button.hidden = hasValue, valueElement.hidden = !hasValue, 
+        const hasValue = state.revealedClues.has(clueKey), cost = getClueCost(clueKey), affordable = canAfford(cost);
+        card.classList.toggle("is-revealed", hasValue), card.classList.toggle("is-unaffordable", !hasValue && !affordable && !state.solved), 
+        button.hidden = hasValue, valueElement.hidden = !hasValue, costElement && (costElement.textContent = formatPointCost(cost)), 
         hasValue && (valueElement.textContent = formatClueValue(clueKey, state.revealedClues.get(clueKey))), 
-        button.disabled = state.solved;
+        button.disabled = state.solved || !affordable, button.title = !state.solved && !affordable ? `You need ${cost - state.pointsRemaining} more points.` : "";
     });
 }
 
 function renderHistoryTable() {
     const slots = Array.isArray(state.player?.history_slots) ? state.player.history_slots : [];
-    if (elements.historyBody.innerHTML = "", 0 === slots.length) {
+    elements.historyBody.innerHTML = "";
+
+    if (0 === slots.length) {
         const row = document.createElement("tr");
-        return row.innerHTML = `
+        row.innerHTML = `
       <td
         class="history-empty"
         colspan="5"
       >
         No team-history entries are available for this player.
       </td>
-    `, elements.historyBody.appendChild(row), void updateHistoryCounters();
-    }
-    slots.forEach(slot => {
-        const historyId = Number(slot.id), revealedEntry = state.revealedHistory.get(historyId), row = document.createElement("tr");
-        row.className = "history-row " + (revealedEntry ? "is-revealed" : "is-locked"), 
-        row.dataset.historyId = String(historyId), row.innerHTML = revealedEntry ? createRevealedHistoryRow(revealedEntry) : createLockedHistoryRow(slot), 
+    `;
         elements.historyBody.appendChild(row);
-    }), updateHistoryCounters();
+        updateHistoryCounters();
+        return;
+    }
+
+    slots.forEach(slot => {
+        const historyId = Number(slot.id);
+        const revealedEntry = state.revealedHistory.get(historyId);
+        const row = document.createElement("tr");
+        const activePremium = !revealedEntry && isActiveLatestHistory(historyId);
+
+        row.className = "history-row " + (revealedEntry ? "is-revealed" : "is-locked") + (activePremium ? " is-active-premium" : "");
+        row.dataset.historyId = String(historyId);
+        row.innerHTML = revealedEntry ? createRevealedHistoryRow(revealedEntry) : createLockedHistoryRow(slot);
+        elements.historyBody.appendChild(row);
+    });
+
+    activateHistoryLogoFallbacks();
+    updateHistoryCounters();
 }
 
 function createLockedHistoryRow(slot) {
-    const entryNumber = String(slot.order || "").padStart(2, "0"), disabled = state.solved ? "disabled" : "", actionText = state.solved ? "Game complete" : "Unlock hint";
+    const historyId = Number(slot.id), entryNumber = String(slot.order || "").padStart(2, "0"), latestEntry = isLatestHistoryId(historyId), statusKnown = null !== getRevealedRetiredStatus(), activePremium = isActiveLatestHistory(historyId), cost = getHistoryHintCost(historyId), affordable = canAfford(cost), disabled = state.solved || !affordable ? "disabled" : "", actionText = state.solved ? "Complete" : affordable ? "Unlock" : `Need ${cost - state.pointsRemaining}`, helperText = activePremium ? `Active-player premium: the latest career entry now costs ${formatPointCost(cost)}` : latestEntry && !statusKnown ? `Blind gamble: unlock the latest entry now for ${formatPointCost(cost)}` : "Reveal this database row without revealing the others", costText = formatPointCost(cost), title = state.solved ? "" : !affordable ? `You need ${cost - state.pointsRemaining} more points.` : activePremium ? `Active-player premium: this latest entry costs ${formatPointCost(cost)}.` : latestEntry && !statusKnown ? `Buy the latest entry for ${formatPointCost(cost)} before knowing whether the player is active or retired.` : "";
     return `
     <td
       class="history-lock-cell"
@@ -433,7 +551,9 @@ function createLockedHistoryRow(slot) {
         class="history-lock-button"
         type="button"
         data-unlock-history="${escapeAttribute(slot.id)}"
+        data-history-cost="${cost}"
         ${disabled}
+        title="${escapeAttribute(title)}"
       >
         <span
           class="history-lock-button__index"
@@ -447,14 +567,16 @@ function createLockedHistoryRow(slot) {
           </strong>
 
           <small>
-            Reveal this database row without revealing the others
+            ${escapeHtml(helperText)}
           </small>
+          ${activePremium ? `<span class="history-premium-note">Active premium · ${formatPointCost(cost)}</span>` : ""}
         </span>
 
         <span
           class="history-lock-button__cta"
         >
-          ${escapeHtml(actionText)}
+          <span class="hint-cost">${escapeHtml(costText)}</span>
+          <span class="history-lock-button__action-text">${escapeHtml(actionText)}</span>
           <span aria-hidden="true">→</span>
         </span>
       </button>
@@ -463,48 +585,73 @@ function createLockedHistoryRow(slot) {
 }
 
 function createRevealedHistoryRow(entry) {
-    const teamName = entry.team || entry.team_name || "Unknown team", role = entry.role || entry.position || "—", logoUrl = entry.team_logo_url || entry.team_logo_filename || "", start = entry.start || entry.start_date || "", end = entry.end || entry.end_date || "", initials = getInitials(teamName);
-    return `
-    <td>
-      <div class="team-cell">
-        <span class="team-logo">
-          ${logoUrl ? `
-      <img
-        src="${escapeAttribute(logoUrl)}"
-        alt=""
-        loading="lazy"
-        onerror="
-          this.hidden=true;
-          this.nextElementSibling.hidden=false;
-        "
-      />
+    const teamName = entry.team || entry.team_name || "Unknown team";
+    const teamAbbreviation = entry.team_abbreviation || entry.abbreviation || "";
+    const role = entry.role || entry.position || "—";
+    const region = entry.region || "—";
+    const logoUrl = getTeamLogoUrl(entry);
+    const start = entry.start || entry.start_date || "";
+    const end = entry.end || entry.end_date || "";
+    const isCurrent = "string" === typeof entry.is_current
+        ? ["true", "yes", "1", "current"].includes(entry.is_current.trim().toLowerCase())
+        : Boolean(entry.is_current);
+    const initials = getInitials(teamName);
+    const logoStateClass = logoUrl ? "has-image" : "is-fallback";
 
-      <span hidden>
-        ${escapeHtml(initials)}
-      </span>
-    ` : `
-      <span>
-        ${escapeHtml(initials)}
-      </span>
-    `}
+    return `
+    <td class="history-team-column">
+      <div class="team-cell">
+        <span
+          class="team-logo ${logoStateClass}"
+          data-team-logo
+          aria-hidden="true"
+        >
+          <span class="team-logo__fallback">
+            ${escapeHtml(initials)}
+          </span>
+
+          ${logoUrl ? `
+            <img
+              class="team-logo__image"
+              data-team-logo-image
+              src="${escapeAttribute(logoUrl)}"
+              alt=""
+              loading="lazy"
+              decoding="async"
+              referrerpolicy="no-referrer"
+            />
+          ` : ""}
         </span>
 
-        <span>
-          ${escapeHtml(teamName)}
+        <span class="team-identity">
+          <strong class="team-identity__name">
+            ${escapeHtml(teamName)}
+          </strong>
+
+          <span class="team-identity__meta">
+            ${teamAbbreviation ? `<span class="team-abbreviation">${escapeHtml(teamAbbreviation)}</span>` : ""}
+            ${isCurrent ? `<span class="current-team-badge"><span aria-hidden="true"></span>Current team</span>` : ""}
+          </span>
         </span>
       </div>
     </td>
 
     <td>
-      ${escapeHtml(role)}
+      <span class="history-detail-chip history-detail-chip--role">
+        ${escapeHtml(role)}
+      </span>
     </td>
 
     <td>
-      ${escapeHtml(entry.region || "—")}
+      <span class="history-detail-chip">
+        ${escapeHtml(region)}
+      </span>
     </td>
 
     <td>
-      ${escapeHtml(formatPeriod(start, end, entry.is_current))}
+      <span class="history-period">
+        ${escapeHtml(formatPeriod(start, end, isCurrent))}
+      </span>
     </td>
 
     <td>
@@ -516,18 +663,75 @@ function createRevealedHistoryRow(entry) {
   `;
 }
 
+function getTeamLogoUrl(entry) {
+    const logoUrl = String(
+        entry?.team_logo_url || ""
+    ).trim();
+
+    if (!logoUrl) {
+        return "";
+    }
+
+    if (/^(?:https?:|data:|blob:)/i.test(logoUrl)) {
+        return logoUrl;
+    }
+
+    return "";
+}
+
+function activateHistoryLogoFallbacks() {
+    elements.historyBody
+        .querySelectorAll("[data-team-logo-image]")
+        .forEach(image => {
+            const showFallback = () => {
+                console.error(
+                    "Team logo failed to load:",
+                    image.currentSrc || image.src
+                );
+
+                const logo = image.closest("[data-team-logo]");
+                if (!logo) return;
+
+                logo.classList.remove("has-image");
+                logo.classList.add("has-error");
+                image.remove();
+            };
+
+            image.addEventListener("load", () => {
+                console.log(
+                    "Team logo loaded successfully:",
+                    image.currentSrc || image.src
+                );
+            }, {
+                once: true
+            });
+
+            image.addEventListener("error", showFallback, {
+                once: true
+            });
+
+            if (image.complete && image.naturalWidth === 0) {
+                showFallback();
+            }
+        });
+}
+
 async function handleGeneralClueUnlock(button) {
     if (state.solved || button.disabled) return;
-    const clueKey = button.dataset.clueKey;
+    const clueKey = button.dataset.clueKey, cost = getClueCost(clueKey);
     if (clueKey && !state.revealedClues.has(clueKey)) {
-        button.disabled = !0, button.setAttribute("aria-busy", "true");
+        if (!reservePoints(cost)) return void showToast(`You need ${cost - state.pointsRemaining} more points for that clue.`);
+        button.disabled = !0, button.setAttribute("aria-busy", "true"), updateProgressUI(), renderGeneralClues(), renderHistoryTable();
         try {
             const clue = await requestGeneralClue(clueKey);
             state.revealedClues.set(clueKey, clue.value), state.manuallyUnlockedClues.add(clueKey), 
-            state.hintsUsed += 1, renderGeneralClues(), saveProgress(), updateProgressUI(), 
-            showToast(`${getClueDisplayName(clueKey)} unlocked.`);
+            state.hintsUsed += 1, renderGeneralClues(), renderHistoryTable(), saveProgress(), updateProgressUI();
+            if ("retired" === clueKey) {
+                const latestSlot = getLatestHistorySlot(), isRetired = parseRetiredStatus(clue.value), latestCost = latestSlot ? getHistoryHintCost(latestSlot.id) : getHistoryHintCost();
+                showToast(isRetired ? `Career status: Retired. Latest entry remains ${formatPointCost(latestCost)}.` : `Career status: Active. Latest entry now costs ${formatPointCost(latestCost)}.`);
+            } else showToast(`${getClueDisplayName(clueKey)} unlocked for ${formatPointCost(cost)}.`);
         } catch (error) {
-            console.error(error), button.disabled = !1, showToast("That clue could not be unlocked.");
+            console.error(error), refundPoints(cost), button.disabled = !1, renderGeneralClues(), renderHistoryTable(), updateProgressUI(), showToast("That clue could not be unlocked. Your points were refunded.");
         } finally {
             button.removeAttribute("aria-busy");
         }
@@ -537,15 +741,17 @@ async function handleGeneralClueUnlock(button) {
 async function handleHistoryUnlock(button) {
     if (state.solved || button.disabled) return;
     const historyId = Number(button.dataset.unlockHistory);
+    const cost = getHistoryHintCost(historyId);
     if (historyId && !state.revealedHistory.has(historyId)) {
-        button.disabled = !0, button.setAttribute("aria-busy", "true");
+        if (!reservePoints(cost)) return void showToast(`You need ${cost - state.pointsRemaining} more points for that history hint.`);
+        button.disabled = !0, button.setAttribute("aria-busy", "true"), updateProgressUI(), renderGeneralClues(), renderHistoryTable();
         try {
             const historyItem = await requestHistoryHint(historyId);
-            state.revealedHistory.set(historyId, historyItem), state.manuallyUnlockedHistoryIds.add(historyId), 
-            state.hintsUsed += 1, renderHistoryTable(), saveProgress(), updateProgressUI(), 
-            showToast("Team-history entry unlocked.");
+            state.revealedHistory.set(historyId, historyItem), state.manuallyUnlockedHistoryIds.add(historyId), state.historyPurchaseCosts.set(historyId, cost), 
+            state.hintsUsed += 1, renderGeneralClues(), renderHistoryTable(), saveProgress(), updateProgressUI(), 
+            showToast(`Team-history entry unlocked for ${formatPointCost(cost)}.`);
         } catch (error) {
-            console.error(error), button.disabled = !1, showToast("That team-history hint could not be unlocked.");
+            console.error(error), refundPoints(cost), renderGeneralClues(), renderHistoryTable(), updateProgressUI(), showToast("That team-history hint could not be unlocked. Your points were refunded.");
         } finally {
             button.removeAttribute("aria-busy");
         }
@@ -553,7 +759,7 @@ async function handleHistoryUnlock(button) {
 }
 
 function formatClueValue(clueKey, value) {
-    return "retired" === clueKey ? value ? "Retired" : "Active" : "won_first_stand" === clueKey || "won_msi" === clueKey || "won_worlds" === clueKey ? value ? "Champion" : "Not won" : "dob" === clueKey ? formatDate(value) : value || "Unknown";
+    return "retired" === clueKey ? parseRetiredStatus(value) ? "Retired" : "Active" : "won_first_stand" === clueKey || "won_msi" === clueKey || "won_worlds" === clueKey ? value ? "Champion" : "Not won" : "dob" === clueKey ? formatDate(value) : value || "Unknown";
 }
 
 function getClueDisplayName(clueKey) {
@@ -579,7 +785,28 @@ function formatDate(value) {
 }
 
 function formatPeriod(start, end, isCurrent = !1) {
-    return isCurrent && start ? `${start} — Present` : start || end ? start && end ? `${start} — ${end}` : start || end || "—" : "—";
+    const formattedStart = formatHistoryDate(start);
+    const formattedEnd = isCurrent ? "Present" : formatHistoryDate(end);
+
+    if (formattedStart && formattedEnd) return `${formattedStart} — ${formattedEnd}`;
+    return formattedStart || formattedEnd || "—";
+}
+
+function formatHistoryDate(value) {
+    if (!value) return "";
+
+    const rawValue = String(value).trim();
+    const isoDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(rawValue);
+    const parsed = new Date(isoDateOnly ? `${rawValue}T00:00:00Z` : rawValue);
+
+    if (Number.isNaN(parsed.getTime())) return rawValue;
+
+    return new Intl.DateTimeFormat("en", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        timeZone: "UTC"
+    }).format(parsed);
 }
 
 function getInitials(value) {
@@ -679,11 +906,48 @@ async function handleGuess(event) {
 }
 
 function revealPortrait(result) {
-    const playerName = result.player_name || state.revealedName || "Correct player", imageUrl = result.image_url || createDemoPortrait(playerName);
-    state.revealedName = playerName, state.revealedImageUrl = imageUrl, elements.playerImage.src = imageUrl, 
-    elements.playerImage.alt = `${playerName} portrait`, elements.playerImage.hidden = !1, 
-    elements.playerName.textContent = playerName, elements.playerCard.classList.add("is-solved"), 
-    elements.guessInput.disabled = !0, elements.submitGuess.disabled = !0, elements.shareButton.disabled = !1;
+    const playerName =
+        result.player_name ||
+        state.revealedName ||
+        "Correct player";
+
+    const imageUrl =
+        result.image_url ||
+        createDemoPortrait(playerName);
+
+    state.revealedName = playerName;
+    state.revealedImageUrl = imageUrl;
+
+    elements.playerImage.onerror = () => {
+        console.error(
+            "Player image failed to load:",
+            elements.playerImage.currentSrc ||
+            elements.playerImage.src
+        );
+
+        elements.playerImage.onerror = null;
+        elements.playerImage.src = createDemoPortrait(
+            playerName
+        );
+    };
+
+    elements.playerImage.onload = () => {
+        console.log(
+            "Player image loaded:",
+            elements.playerImage.currentSrc ||
+            elements.playerImage.src
+        );
+    };
+
+    elements.playerImage.src = imageUrl;
+    elements.playerImage.alt = `${playerName} portrait`;
+    elements.playerImage.hidden = false;
+
+    elements.playerName.textContent = playerName;
+    elements.playerCard.classList.add("is-solved");
+    elements.guessInput.disabled = true;
+    elements.submitGuess.disabled = true;
+    elements.shareButton.disabled = false;
 }
 
 async function revealAllPostGameInformation() {
@@ -705,24 +969,31 @@ function updateHistoryCounters() {
 }
 
 function updateProgressUI() {
+    const pointsSpent = getPointsSpent(), pointsPercent = Math.max(0, Math.min(100, state.pointsRemaining / Math.max(1, CONFIG.startingPoints) * 100));
     elements.attemptCount.textContent = String(state.attempts), elements.progressScore.textContent = String(state.attempts), 
-    elements.hintCount.textContent = String(state.hintsUsed), elements.sideHintCount.textContent = String(state.hintsUsed);
-    const percent = Math.min(100, state.attempts / Math.max(1, CONFIG.maxProgressGuesses) * 100);
-    if (elements.progressFill.style.width = `${percent}%`, state.solved) {
+    elements.hintCount.textContent = String(state.hintsUsed), elements.sideHintCount.textContent = String(state.hintsUsed), 
+    elements.topPoints.textContent = String(state.pointsRemaining), elements.pointsRemaining.textContent = String(state.pointsRemaining), 
+    elements.startingPoints.textContent = String(CONFIG.startingPoints), elements.pointsSpent.textContent = String(pointsSpent), 
+    elements.progressFill.style.width = `${pointsPercent}%`;
+    renderGeneralClues(), renderHistoryTable();
+    if (state.solved) {
         const noun = 1 === state.attempts ? "guess" : "guesses", hintNoun = 1 === state.hintsUsed ? "hint" : "hints";
-        return void (elements.progressText.textContent = `Solved in ${state.attempts} ${noun} using ${state.hintsUsed} ${hintNoun}.`);
+        return void (elements.progressText.textContent = `Finished with ${state.pointsRemaining} points after ${state.attempts} ${noun} and ${state.hintsUsed} ${hintNoun}.`);
     }
-    0 !== state.attempts || 0 !== state.hintsUsed ? 0 !== state.hintsUsed ? 0 !== state.manuallyUnlockedHistoryIds.size ? (elements.progressText.textContent = "Choose the next career entry carefully.", 
-    updateHistoryCounters()) : elements.progressText.textContent = "You have not touched the career history yet." : elements.progressText.textContent = "No hints used yet. Bold strategy." : elements.progressText.textContent = "Your first guess is waiting.";
+    if (0 === state.pointsRemaining) return void (elements.progressText.textContent = "No points left — every remaining clue is locked. Trust your read.");
+    if (0 === pointsSpent) return void (elements.progressText.textContent = "Your full score is still intact.");
+    const latestSlot = getLatestHistorySlot(), latestCost = latestSlot ? getHistoryHintCost(latestSlot.id) : getHistoryHintCost();
+    if (latestSlot && isActiveLatestHistory(latestSlot.id) && state.pointsRemaining < latestCost) return void (elements.progressText.textContent = `The active-player latest entry now costs ${latestCost} points and is out of reach.`);
+    if (state.pointsRemaining < getHistoryHintCost()) return void (elements.progressText.textContent = "History hints are out of reach, but cheaper clues may still be available.");
+    elements.progressText.textContent = `${state.pointsRemaining} points remain. Spend only what moves you closer.`;
 }
-
 function setGuessMessage(message, type = "") {
     elements.guessMessage.textContent = message, elements.guessMessage.classList.remove("is-error", "is-success"), 
     type && elements.guessMessage.classList.add(`is-${type}`);
 }
 
 async function shareResult() {
-    const text = [ `RiftGuess #${state.player?.game_number || "Daily"}`, `Solved in ${state.attempts} ${1 === state.attempts ? "guess" : "guesses"}`, `${state.hintsUsed} ${1 === state.hintsUsed ? "hint" : "hints"} used`, "Can you guess today's LoL pro?" ].join("\n");
+    const text = [ `RiftGuess #${state.player?.game_number || "Daily"}`, `${state.pointsRemaining}/${CONFIG.startingPoints} points remaining`, `Solved in ${state.attempts} ${1 === state.attempts ? "guess" : "guesses"}`, `${state.hintsUsed} ${1 === state.hintsUsed ? "hint" : "hints"} purchased`, "Can you guess today's LoL pro?" ].join("\n");
     try {
         if (navigator.share) return void await navigator.share({
             title: "RiftGuess",

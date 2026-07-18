@@ -51,8 +51,8 @@
       <p class="eyebrow">ONE PLAYER. ONE DAY. CHOOSE YOUR CLUES.</p>
       <h1 id="pageTitle">Who is today's pro?</h1>
       <p class="hero__copy">
-        Unlock only the clues you need. Every career entry is a separate hint,
-        while the portrait stays hidden until the game is over.
+        Start with 100 points and unlock only the clues you need. Every career
+        entry is a separate paid hint, while wrong guesses remain free.
       </p>
     </section>
 
@@ -124,6 +124,9 @@
               <span class="attempt-counter">
                 <strong id="hintCount">0</strong> hints
               </span>
+              <span class="attempt-counter point-counter">
+                <strong id="topPoints">100</strong> pts left
+              </span>
             </div>
           </div>
 
@@ -169,7 +172,10 @@
                     <strong>Unlock nationality</strong>
                     <small>Discover the player's home country</small>
                   </span>
-                  <span aria-hidden="true">→</span>
+                  <span class="clue-unlock-button__action">
+                    <span class="hint-cost" data-clue-cost="nationality">— pts</span>
+                    <span aria-hidden="true">→</span>
+                  </span>
                 </button>
 
                 <strong class="clue-value" data-clue-value="nationality" hidden>
@@ -192,7 +198,10 @@
                     <strong>Unlock birth date</strong>
                     <small>Use the player's age as a clue</small>
                   </span>
-                  <span aria-hidden="true">→</span>
+                  <span class="clue-unlock-button__action">
+                    <span class="hint-cost" data-clue-cost="dob">— pts</span>
+                    <span aria-hidden="true">→</span>
+                  </span>
                 </button>
 
                 <strong class="clue-value" data-clue-value="dob" hidden>
@@ -215,7 +224,10 @@
                     <strong>Unlock status</strong>
                     <small>Find out whether they are active or retired</small>
                   </span>
-                  <span aria-hidden="true">→</span>
+                  <span class="clue-unlock-button__action">
+                    <span class="hint-cost" data-clue-cost="retired">— pts</span>
+                    <span aria-hidden="true">→</span>
+                  </span>
                 </button>
 
                 <strong class="clue-value" data-clue-value="retired" hidden>
@@ -260,7 +272,10 @@
                     <strong>Unlock First Stand record</strong>
                     <small>Has this player ever lifted the First Stand trophy?</small>
                   </span>
-                  <span aria-hidden="true">→</span>
+                  <span class="clue-unlock-button__action">
+                    <span class="hint-cost" data-clue-cost="won_first_stand">— pts</span>
+                    <span aria-hidden="true">→</span>
+                  </span>
                 </button>
 
                 <strong
@@ -288,9 +303,12 @@
                 >
                   <span>
                     <strong>Unlock MSI record</strong>
-                    <small>Find out whether the player has won MSI</small>
+                    <small>Find out whether the player has ever won the MSI</small>
                   </span>
-                  <span aria-hidden="true">→</span>
+                  <span class="clue-unlock-button__action">
+                    <span class="hint-cost" data-clue-cost="won_msi">— pts</span>
+                    <span aria-hidden="true">→</span>
+                  </span>
                 </button>
 
                 <strong
@@ -318,9 +336,12 @@
                 >
                   <span>
                     <strong>Unlock Worlds record</strong>
-                    <small>Has this player become a World Champion?</small>
+                    <small>Has this player ever become a World Champion?</small>
                   </span>
-                  <span aria-hidden="true">→</span>
+                  <span class="clue-unlock-button__action">
+                    <span class="hint-cost" data-clue-cost="won_worlds">— pts</span>
+                    <span aria-hidden="true">→</span>
+                  </span>
                 </button>
 
                 <strong
@@ -340,8 +361,8 @@
                 <span class="section-heading__kicker">Career path</span>
                 <h2 id="historyHeading">Team history</h2>
                 <p class="section-heading__copy">
-                  Each database row is one independent hint. Unlock the entry
-                  you think will be the most useful.
+                  Each database row is one independent hint. The latest entry costs
+                  20 points as a blind gamble, or 35 after an active status is revealed.
                 </p>
               </div>
 
@@ -375,20 +396,32 @@
 
       <aside class="side-panel">
         <section class="panel-card progress-card">
-          <span class="panel-card__kicker">Today's run</span>
+          <span class="panel-card__kicker">Today's score</span>
 
-          <div class="progress-card__score">
-            <strong id="progressScore">0</strong>
-            <span>guesses</span>
+          <div class="points-balance">
+            <span class="points-balance__icon" aria-hidden="true">✦</span>
+            <div>
+              <strong id="pointsRemaining" aria-live="polite">100</strong>
+              <span>points left</span>
+            </div>
           </div>
 
-          <div class="progress-track" aria-hidden="true">
+          <div class="progress-track points-track" aria-hidden="true">
             <span id="progressFill"></span>
           </div>
 
-          <p id="progressText">Your first guess is waiting.</p>
+          <div class="points-summary">
+            <span>Started with <strong id="startingPoints">100</strong></span>
+            <span>Spent <strong id="pointsSpent">0</strong></span>
+          </div>
+
+          <p id="progressText">Your full score is still intact.</p>
 
           <div class="run-stats">
+            <div class="run-stats__primary">
+              <span>Guesses</span>
+              <strong id="progressScore">0</strong>
+            </div>
             <div>
               <span>Hints unlocked</span>
               <strong id="sideHintCount">0</strong>
@@ -402,11 +435,12 @@
 
         <section class="panel-card mini-rules">
           <span class="panel-card__kicker">How to play</span>
-          <h2>Spend your clues carefully.</h2>
+          <h2>Protect your 100-point score.</h2>
           <ol>
-            <li>Unlock basic information and international-title records separately.</li>
-            <li>Every team-history entry is its own selectable hint.</li>
-            <li>The portrait and player name appear only after the game ends.</li>
+            <li>Every hint shows its price before you unlock it.</li>
+            <li>The latest history entry can be gambled on for 20 points before status is known.</li>
+            <li>If status is revealed as active first, that entry is highlighted and costs 35 points.</li>
+            <li>Wrong guesses are free; the points left when you solve are your score.</li>
           </ol>
         </section>
 
@@ -443,9 +477,22 @@
     </p>
 
     <p>
-      Nationality, date of birth, career status, First Stand, MSI, and Worlds can
-      all be unlocked separately. Team history is even more granular: each career entry has its own unlock
-      button, so revealing one team does not reveal the rest.
+      Every daily run begins with 100 points. Nationality, date of birth, career
+      status, First Stand, MSI, and Worlds each have their own price. Normal team
+      history entries cost 20 points and unlock only that one row.
+    </p>
+
+    <p>
+      The latest team-history entry is always purchasable for 20 points while career
+      status is unknown. That is a gamble: a retired player's final team may not be very
+      useful. If status is revealed as active before purchase, its border is highlighted
+      and its price becomes 35 points. Retired players keep the normal 20-point price.
+    </p>
+
+    <p>
+      Wrong guesses do not reduce your score. The challenge is to identify the
+      player while keeping as many points as possible, and hints become unavailable
+      when you cannot afford them.
     </p>
 
     <p>
