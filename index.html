@@ -7,7 +7,7 @@
     name="description"
     content="A daily League of Legends professional-player guessing game."
   />
-  <title>RiftGuess — Daily LoL Player</title>
+  <title>Guess the LoL Pro</title>
   <link rel="stylesheet" href="styles.css" />
   <script src="script.js" defer></script>
 </head>
@@ -18,10 +18,10 @@
 
   <header class="site-header">
     <a class="brand" href="#" aria-label="RiftGuess home">
-      <span class="brand__mark" aria-hidden="true">RG</span>
+      <span class="brand__mark" aria-hidden="true">GLP</span>
       <span>
-        <strong>RiftGuess</strong>
-        <small>Daily LoL Player</small>
+        <strong>Guess the LoL Pro</strong>
+        <small>Daily LoL Pro Guessr</small>
       </span>
     </a>
 
@@ -40,6 +40,7 @@
         id="themeButton"
         type="button"
         aria-label="Toggle theme"
+        title="DO NOT CLICK THIS BUTTON!!"
       >
         <span id="themeIcon" aria-hidden="true">☾</span>
       </button>
@@ -51,8 +52,7 @@
       <p class="eyebrow">ONE PLAYER. ONE DAY. CHOOSE YOUR CLUES.</p>
       <h1 id="pageTitle">Who is today's pro?</h1>
       <p class="hero__copy">
-        Start with 100 points and unlock only the clues you need. Every career
-        entry is a separate paid hint, while wrong guesses remain free.
+        Guess the professional League of Legends player of the day. Use points to unlock hints. The fewer points you spend, the higher your score.
       </p>
     </section>
 
@@ -125,7 +125,7 @@
                 <strong id="hintCount">0</strong> hints
               </span>
               <span class="attempt-counter point-counter">
-                <strong id="topPoints">100</strong> pts left
+                <strong id="topPoints">150</strong> pts left
               </span>
             </div>
           </div>
@@ -259,7 +259,10 @@
                 data-clue-card="won_first_stand"
               >
                 <div class="clue-card__heading">
-                  <span class="clue-card__icon" aria-hidden="true">◆</span>
+                  <span
+                    class="clue-card__icon tournament-logo tournament-logo--first-stand"
+                    aria-hidden="true"
+                  ></span>
                   <span class="clue-card__label">First Stand</span>
                 </div>
 
@@ -269,7 +272,7 @@
                   data-clue-key="won_first_stand"
                 >
                   <span>
-                    <strong>Unlock First Stand record</strong>
+                    <strong>First Stand record</strong>
                     <small>Has this player ever lifted the First Stand trophy?</small>
                   </span>
                   <span class="clue-unlock-button__action">
@@ -292,7 +295,10 @@
                 data-clue-card="won_msi"
               >
                 <div class="clue-card__heading">
-                  <span class="clue-card__icon" aria-hidden="true">✦</span>
+                  <span
+                  class="clue-card__icon tournament-logo tournament-logo--msi"
+                  aria-hidden="true"
+                ></span>
                   <span class="clue-card__label">MSI</span>
                 </div>
 
@@ -302,7 +308,7 @@
                   data-clue-key="won_msi"
                 >
                   <span>
-                    <strong>Unlock MSI record</strong>
+                    <strong>MSI record</strong>
                     <small>Find out whether the player has ever won the MSI</small>
                   </span>
                   <span class="clue-unlock-button__action">
@@ -325,7 +331,10 @@
                 data-clue-card="won_worlds"
               >
                 <div class="clue-card__heading">
-                  <span class="clue-card__icon" aria-hidden="true">♛</span>
+                  <span
+                    class="clue-card__icon tournament-logo tournament-logo--worlds"
+                    aria-hidden="true"
+                  ></span>
                   <span class="clue-card__label">Worlds</span>
                 </div>
 
@@ -335,7 +344,7 @@
                   data-clue-key="won_worlds"
                 >
                   <span>
-                    <strong>Unlock Worlds record</strong>
+                    <strong>Worlds record</strong>
                     <small>Has this player ever become a World Champion?</small>
                   </span>
                   <span class="clue-unlock-button__action">
@@ -361,8 +370,8 @@
                 <span class="section-heading__kicker">Career path</span>
                 <h2 id="historyHeading">Team history</h2>
                 <p class="section-heading__copy">
-                  Each database row is one independent hint. The latest entry costs
-                  20 points as a blind gamble, or 35 after an active status is revealed.
+                  Each database row is one independent hint. Normal entries cost
+                  20 points, while the latest entry always costs 35 points.
                 </p>
               </div>
 
@@ -395,13 +404,16 @@
       </div>
 
       <aside class="side-panel">
-        <section class="panel-card progress-card">
-          <span class="panel-card__kicker">Today's score</span>
+        <section class="panel-card progress-card" id="progressCard">
+          <div class="progress-card__heading">
+            <span class="panel-card__kicker">Today's score</span>
+            <span class="progress-status" id="progressStatus">In progress</span>
+          </div>
 
           <div class="points-balance">
             <span class="points-balance__icon" aria-hidden="true">✦</span>
             <div>
-              <strong id="pointsRemaining" aria-live="polite">100</strong>
+              <strong id="pointsRemaining" aria-live="polite">150</strong>
               <span>points left</span>
             </div>
           </div>
@@ -411,7 +423,7 @@
           </div>
 
           <div class="points-summary">
-            <span>Started with <strong id="startingPoints">100</strong></span>
+            <span>Started with <strong id="startingPoints">150</strong></span>
             <span>Spent <strong id="pointsSpent">0</strong></span>
           </div>
 
@@ -431,16 +443,26 @@
               <strong id="historyUnlockedCount">0</strong>
             </div>
           </div>
+
+          <button
+            class="view-result-button"
+            id="viewResultButton"
+            type="button"
+            hidden
+          >
+            <span aria-hidden="true">✦</span>
+            View solved result
+          </button>
         </section>
 
         <section class="panel-card mini-rules">
           <span class="panel-card__kicker">How to play</span>
-          <h2>Protect your 100-point score.</h2>
+          <h2>Protect your 150-point score.</h2>
           <ol>
             <li>Every hint shows its price before you unlock it.</li>
-            <li>The latest history entry can be gambled on for 20 points before status is known.</li>
-            <li>If status is revealed as active first, that entry is highlighted and costs 35 points.</li>
-            <li>Wrong guesses are free; the points left when you solve are your score.</li>
+            <li>Normal team-history entries cost 20 points each.</li>
+            <li>The latest team-history entry always costs 35 points.</li>
+            <li>Wrong guesses cost you 10 points; the remaining points left when you solve are your score.</li>
           </ol>
         </section>
 
@@ -456,6 +478,183 @@
       </aside>
     </section>
   </main>
+  <footer class="site-footer">
+  <div class="site-footer__glow" aria-hidden="true"></div>
+
+  <div class="site-footer__inner">
+    <section class="site-footer__brand">
+      <div class="site-footer__logo" aria-hidden="true">GLP</div>
+
+      <div>
+        <strong class="site-footer__title">Guess the LoL Pro</strong>
+        <p>
+          A daily League of Legends professional player guessing game.
+        </p>
+      </div>
+    </section>
+
+    <nav class="site-footer__column" aria-label="Game links">
+      <strong>Game</strong>
+
+      <a href="#">Daily challenge</a>
+
+      <button
+        id="footerHelpButton"
+        type="button"
+      >
+        How to play
+      </button>
+
+      <a href="#pageTitle">Back to top</a>
+    </nav>
+
+    <nav class="site-footer__column" aria-label="Project links">
+      <strong>Project</strong>
+
+      <a
+        href="https://github.com/KatoTheFluffyWolf/GuessTheLoLPros"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        GitHub repository
+      </a>
+
+      <a
+        href="https://github.com/KatoTheFluffyWolf/GuessTheLoLPros/issues"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Report a problem
+      </a>
+    </nav>
+  </div>
+
+  <div class="site-footer__bottom">
+    <div class="site-footer__bottom-inner">
+      <p>
+        © <span id="footerYear"></span> Guess the LoL Pro. All rights reserved.
+      </p>
+
+      <p>
+        Fan-made project. Not affiliated with or endorsed by Riot Games.
+        League of Legends and related marks belong to Riot Games.
+      </p>
+    </div>
+  </div>
+</footer>
+
+  <dialog
+    class="result-dialog"
+    id="resultDialog"
+    aria-labelledby="resultTitle"
+    aria-describedby="resultSummary"
+  >
+    <div class="result-dialog__surface">
+      <div class="result-dialog__glow" aria-hidden="true"></div>
+
+      <button
+        class="result-dialog__close"
+        id="closeResultButton"
+        type="button"
+        aria-label="Close result"
+      >
+        ×
+      </button>
+
+      <div class="result-dialog__content">
+        <section class="result-dialog__identity">
+          <span class="result-dialog__victory-badge">
+            <span aria-hidden="true">✓</span>
+            Correct guess
+          </span>
+
+          <div class="result-dialog__portrait">
+            <img id="resultPlayerImage" alt="" />
+            <div class="result-dialog__portrait-shine" aria-hidden="true"></div>
+          </div>
+
+          <div class="result-dialog__player-copy">
+            <span class="panel-card__kicker">Today's pro was</span>
+            <h2 id="resultTitle">
+              <span id="resultPlayerName">Correct player</span>
+            </h2>
+            <p id="resultChallengeLabel">Daily challenge complete</p>
+          </div>
+        </section>
+
+        <section class="result-score-card" aria-label="Completed game score">
+          <div class="result-score-card__heading">
+            <div>
+              <span class="panel-card__kicker">Final score</span>
+              <strong>Run complete</strong>
+            </div>
+
+            <span class="result-score-card__solved">
+              <span aria-hidden="true"></span>
+              Solved
+            </span>
+          </div>
+
+          <div class="result-score-card__balance">
+            <span class="result-score-card__icon" aria-hidden="true">✦</span>
+            <div>
+              <strong id="resultPointsRemaining">150</strong>
+              <span>
+                / <strong id="resultStartingPoints">150</strong> points
+              </span>
+            </div>
+          </div>
+
+          <div class="progress-track result-score-card__track" aria-hidden="true">
+            <span id="resultProgressFill"></span>
+          </div>
+
+          <div class="points-summary result-score-card__summary">
+            <span>Score kept <strong id="resultScoreKept">150%</strong></span>
+            <span>Spent <strong id="resultPointsSpent">0</strong></span>
+          </div>
+
+          <p id="resultSummary">
+            You found today's player.
+          </p>
+
+          <div class="result-run-stats">
+            <div>
+              <span>Guesses</span>
+              <strong id="resultAttempts">0</strong>
+            </div>
+            <div>
+              <span>Hints bought</span>
+              <strong id="resultHints">0</strong>
+            </div>
+            <div>
+              <span>History hints</span>
+              <strong id="resultHistory">0</strong>
+            </div>
+          </div>
+
+          <div class="result-dialog__actions">
+            <button
+              class="result-dialog__share"
+              id="resultShareButton"
+              type="button"
+            >
+              <span aria-hidden="true">↗</span>
+              Share result
+            </button>
+
+            <button
+              class="result-dialog__recap"
+              id="resultRecapButton"
+              type="button"
+            >
+              View full recap
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </dialog>
 
   <dialog class="help-dialog" id="helpDialog">
     <button
@@ -477,16 +676,15 @@
     </p>
 
     <p>
-      Every daily run begins with 100 points. Nationality, date of birth, career
+      Every daily run begins with 150 points. Nationality, date of birth, career
       status, First Stand, MSI, and Worlds each have their own price. Normal team
       history entries cost 20 points and unlock only that one row.
     </p>
 
     <p>
-      The latest team-history entry is always purchasable for 20 points while career
-      status is unknown. That is a gamble: a retired player's final team may not be very
-      useful. If status is revealed as active before purchase, its border is highlighted
-      and its price becomes 35 points. Retired players keep the normal 20-point price.
+      Normal team-history entries cost 20 points each. The latest team-history entry
+      always costs 35 points, regardless of whether career status has been revealed or
+      whether the player is active or retired.
     </p>
 
     <p>
@@ -502,5 +700,6 @@
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  
 </body>
 </html>

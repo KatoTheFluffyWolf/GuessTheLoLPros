@@ -7,9 +7,10 @@ const CONFIG = {
     resetHourUTC: 17,
     maxProgressGuesses: 6,
     sessionPollIntervalMs: 3e4,
-    startingPoints: 100,
+    startingPoints: 150,
+    incorrectGuessPenalty: 10,
     historyHintCost: 20,
-    activeLatestHistoryCost: 35,
+    latestHistoryHintCost: 35,
     clueCosts: {
         nationality: 10,
         dob: 15,
@@ -110,7 +111,26 @@ const CONFIG = {
     progressScore: document.querySelector("#progressScore"),
     progressFill: document.querySelector("#progressFill"),
     progressText: document.querySelector("#progressText"),
+    progressCard: document.querySelector("#progressCard"),
+    progressStatus: document.querySelector("#progressStatus"),
+    viewResultButton: document.querySelector("#viewResultButton"),
     shareButton: document.querySelector("#shareButton"),
+    resultDialog: document.querySelector("#resultDialog"),
+    closeResultButton: document.querySelector("#closeResultButton"),
+    resultPlayerImage: document.querySelector("#resultPlayerImage"),
+    resultPlayerName: document.querySelector("#resultPlayerName"),
+    resultChallengeLabel: document.querySelector("#resultChallengeLabel"),
+    resultPointsRemaining: document.querySelector("#resultPointsRemaining"),
+    resultStartingPoints: document.querySelector("#resultStartingPoints"),
+    resultProgressFill: document.querySelector("#resultProgressFill"),
+    resultScoreKept: document.querySelector("#resultScoreKept"),
+    resultPointsSpent: document.querySelector("#resultPointsSpent"),
+    resultAttempts: document.querySelector("#resultAttempts"),
+    resultHints: document.querySelector("#resultHints"),
+    resultHistory: document.querySelector("#resultHistory"),
+    resultSummary: document.querySelector("#resultSummary"),
+    resultShareButton: document.querySelector("#resultShareButton"),
+    resultRecapButton: document.querySelector("#resultRecapButton"),
     helpButton: document.querySelector("#helpButton"),
     helpDialog: document.querySelector("#helpDialog"),
     closeHelpButton: document.querySelector("#closeHelpButton"),
@@ -158,18 +178,13 @@ function parseRetiredStatus(value) {
     return Boolean(value);
 }
 
-function getRevealedRetiredStatus() {
-    return state.revealedClues.has("retired") ? parseRetiredStatus(state.revealedClues.get("retired")) : null;
-}
-
-function isActiveLatestHistory(historyId) {
-    return isLatestHistoryId(historyId) && !1 === getRevealedRetiredStatus();
-}
-
 function getHistoryHintCost(historyId = null) {
     const baseCost = Number(CONFIG.historyHintCost) || 0;
     if (null === historyId || void 0 === historyId) return baseCost;
-    return isActiveLatestHistory(historyId) ? Math.max(baseCost, Number(CONFIG.activeLatestHistoryCost) || baseCost) : baseCost;
+
+    return isLatestHistoryId(historyId)
+        ? Math.max(baseCost, Number(CONFIG.latestHistoryHintCost) || baseCost)
+        : baseCost;
 }
 
 function getPointsSpent() {
@@ -188,6 +203,24 @@ function reservePoints(cost) {
 
 function refundPoints(cost) {
     state.pointsRemaining = Math.min(CONFIG.startingPoints, state.pointsRemaining + cost);
+}
+
+function applyIncorrectGuessPenalty() {
+    const configuredPenalty = Math.max(
+        0,
+        Number(CONFIG.incorrectGuessPenalty) || 0
+    );
+    const deductedPoints = Math.min(
+        configuredPenalty,
+        state.pointsRemaining
+    );
+
+    state.pointsRemaining = Math.max(
+        0,
+        state.pointsRemaining - deductedPoints
+    );
+
+    return deductedPoints;
 }
 
 function calculateSavedHintSpend() {
@@ -303,6 +336,7 @@ function removeOldGameSessions() {
 
 function saveProgress() {
     const payload = {
+        startingPoints: CONFIG.startingPoints,
         attempts: state.attempts,
         hintsUsed: state.hintsUsed,
         pointsRemaining: state.pointsRemaining,
@@ -328,8 +362,22 @@ function restoreProgress() {
         state.manuallyUnlockedClues = new Set(Array.isArray(saved.manuallyUnlockedClues) ? saved.manuallyUnlockedClues : []), 
         state.manuallyUnlockedHistoryIds = new Set(Array.isArray(saved.manuallyUnlockedHistoryIds) ? saved.manuallyUnlockedHistoryIds.map(Number) : []),
         state.historyPurchaseCosts = new Map(Object.entries(saved.historyPurchaseCosts || {}).map(([historyId, cost]) => [ Number(historyId), Number(cost) ]));
-        const savedPoints = Number(saved.pointsRemaining), calculatedPoints = CONFIG.startingPoints - calculateSavedHintSpend();
-        state.pointsRemaining = Number.isFinite(savedPoints) ? Math.max(0, Math.min(CONFIG.startingPoints, savedPoints)) : Math.max(0, calculatedPoints);
+        const savedStartingPoints = Number(saved.startingPoints);
+        const savedPoints = Number(saved.pointsRemaining);
+        const calculatedPoints = Math.max(
+            0,
+            CONFIG.startingPoints - calculateSavedHintSpend()
+        );
+        const savedUsesCurrentPointLimit =
+            savedStartingPoints === CONFIG.startingPoints;
+
+        state.pointsRemaining =
+            savedUsesCurrentPointLimit && Number.isFinite(savedPoints)
+                ? Math.max(
+                    0,
+                    Math.min(CONFIG.startingPoints, savedPoints)
+                )
+                : calculatedPoints;
     } catch (error) {
         console.warn("Could not restore the saved game state.", error);
     }
@@ -465,8 +513,10 @@ async function loadGame() {
 }
 
 function renderBaseGame() {
-    state.player && (elements.gameNumber.textContent = state.player.game_number ? `Challenge #${state.player.game_number}` : "Daily challenge", 
-    renderHistoryTable());
+    if (!state.player) return;
+
+    elements.gameNumber.textContent = "Daily challenge";
+    renderHistoryTable();
 }
 
 async function restoreUnlockedHints() {
@@ -487,10 +537,13 @@ async function restoreUnlockedHints() {
 
 async function restoreSolvedGame() {
     const postGameData = await revealAllPostGameInformation();
+
     revealPortrait({
         player_name: state.revealedName || postGameData?.player_name || "Correct player",
         image_url: state.revealedImageUrl || postGameData?.image_url || ""
-    }), setGuessMessage("You already solved today's player. Nice work.", "success");
+    });
+
+    setGuessMessage("");
 }
 
 function renderGeneralClues() {
@@ -528,20 +581,42 @@ function renderHistoryTable() {
         const historyId = Number(slot.id);
         const revealedEntry = state.revealedHistory.get(historyId);
         const row = document.createElement("tr");
-        const activePremium = !revealedEntry && isActiveLatestHistory(historyId);
 
-        row.className = "history-row " + (revealedEntry ? "is-revealed" : "is-locked") + (activePremium ? " is-active-premium" : "");
+        row.className = "history-row " + (revealedEntry ? "is-revealed" : "is-locked");
         row.dataset.historyId = String(historyId);
         row.innerHTML = revealedEntry ? createRevealedHistoryRow(revealedEntry) : createLockedHistoryRow(slot);
         elements.historyBody.appendChild(row);
     });
 
     activateHistoryLogoFallbacks();
+    activateRoleIconFallbacks();
     updateHistoryCounters();
 }
 
 function createLockedHistoryRow(slot) {
-    const historyId = Number(slot.id), entryNumber = String(slot.order || "").padStart(2, "0"), latestEntry = isLatestHistoryId(historyId), statusKnown = null !== getRevealedRetiredStatus(), activePremium = isActiveLatestHistory(historyId), cost = getHistoryHintCost(historyId), affordable = canAfford(cost), disabled = state.solved || !affordable ? "disabled" : "", actionText = state.solved ? "Complete" : affordable ? "Unlock" : `Need ${cost - state.pointsRemaining}`, helperText = activePremium ? `Active-player premium: the latest career entry now costs ${formatPointCost(cost)}` : latestEntry && !statusKnown ? `Blind gamble: unlock the latest entry now for ${formatPointCost(cost)}` : "Reveal this database row without revealing the others", costText = formatPointCost(cost), title = state.solved ? "" : !affordable ? `You need ${cost - state.pointsRemaining} more points.` : activePremium ? `Active-player premium: this latest entry costs ${formatPointCost(cost)}.` : latestEntry && !statusKnown ? `Buy the latest entry for ${formatPointCost(cost)} before knowing whether the player is active or retired.` : "";
+    const historyId = Number(slot.id);
+    const entryNumber = String(slot.order || "").padStart(2, "0");
+    const latestEntry = isLatestHistoryId(historyId);
+    const cost = getHistoryHintCost(historyId);
+    const affordable = canAfford(cost);
+    const disabled = state.solved || !affordable ? "disabled" : "";
+    const actionText = state.solved
+        ? "Complete"
+        : affordable
+            ? "Unlock"
+            : `Need ${cost - state.pointsRemaining}`;
+    const helperText = latestEntry
+        ? `Latest career entry: this row always costs ${formatPointCost(cost)}`
+        : "Reveal this database row without revealing the others";
+    const costText = formatPointCost(cost);
+    const title = state.solved
+        ? ""
+        : !affordable
+            ? `You need ${cost - state.pointsRemaining} more points.`
+            : latestEntry
+                ? `The latest career entry always costs ${formatPointCost(cost)}.`
+                : "";
+
     return `
     <td
       class="history-lock-cell"
@@ -569,7 +644,6 @@ function createLockedHistoryRow(slot) {
           <small>
             ${escapeHtml(helperText)}
           </small>
-          ${activePremium ? `<span class="history-premium-note">Active premium · ${formatPointCost(cost)}</span>` : ""}
         </span>
 
         <span
@@ -583,11 +657,68 @@ function createLockedHistoryRow(slot) {
     </td>
   `;
 }
+const ROLE_ICON_PATHS = {
+    top: "assets/top.png",
+    jungle: "assets/jung.png",
+    mid: "assets/mid.png",
+    bot: "assets/bot.png",
+    support: "assets/support.png"
+};
+
+const ROLE_ALIASES = {
+    // Top
+    top: "top",
+    "top lane": "top",
+    "top laner": "top",
+
+    // Jungle
+    jungle: "jungle",
+    jungler: "jungle",
+    jg: "jungle",
+    jgl: "jungle",
+
+    // Mid
+    mid: "mid",
+    middle: "mid",
+    "mid lane": "mid",
+    "mid laner": "mid",
+    "middle lane": "mid",
+
+    // Bot / ADC
+    bot: "bot",
+    bottom: "bot",
+    "bot lane": "bot",
+    "bot laner": "bot",
+    "bottom lane": "bot",
+    adc: "bot",
+    "ad carry": "bot",
+    marksman: "bot",
+
+    // Support
+    support: "support",
+    supp: "support",
+    sup: "support"
+};
+
+function getRoleIconPath(role) {
+    const normalizedRole = String(role || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ");
+
+    const basicRole = ROLE_ALIASES[normalizedRole];
+
+    return basicRole
+        ? ROLE_ICON_PATHS[basicRole]
+        : "";
+}
 
 function createRevealedHistoryRow(entry) {
     const teamName = entry.team || entry.team_name || "Unknown team";
     const teamAbbreviation = entry.team_abbreviation || entry.abbreviation || "";
     const role = entry.role || entry.position || "—";
+    const roleIconPath = getRoleIconPath(role);
     const region = entry.region || "—";
     const logoUrl = getTeamLogoUrl(entry);
     const start = entry.start || entry.start_date || "";
@@ -636,11 +767,40 @@ function createRevealedHistoryRow(entry) {
       </div>
     </td>
 
-    <td>
-      <span class="history-detail-chip history-detail-chip--role">
-        ${escapeHtml(role)}
-      </span>
-    </td>
+    <td class="history-role-column">
+  ${
+      roleIconPath
+          ? `
+            <span
+              class="history-role-display"
+              data-role-display
+              title="${escapeAttribute(role)}"
+            >
+              <img
+                class="history-role-icon"
+                data-role-icon-image
+                src="${escapeAttribute(roleIconPath)}"
+                alt="${escapeAttribute(role)} role"
+                loading="lazy"
+                decoding="async"
+              />
+
+              <span
+                class="history-detail-chip history-detail-chip--role"
+                data-role-fallback
+                hidden
+              >
+                ${escapeHtml(role)}
+              </span>
+            </span>
+          `
+          : `
+            <span class="history-detail-chip history-detail-chip--role">
+              ${escapeHtml(role)}
+            </span>
+          `
+  }
+</td>
 
     <td>
       <span class="history-detail-chip">
@@ -716,6 +876,36 @@ function activateHistoryLogoFallbacks() {
         });
 }
 
+function activateRoleIconFallbacks() {
+    elements.historyBody
+        .querySelectorAll("[data-role-icon-image]")
+        .forEach(image => {
+            const showTextFallback = () => {
+                const roleDisplay = image.closest("[data-role-display]");
+
+                if (!roleDisplay) return;
+
+                const fallback = roleDisplay.querySelector(
+                    "[data-role-fallback]"
+                );
+
+                image.remove();
+
+                if (fallback) {
+                    fallback.hidden = false;
+                }
+            };
+
+            image.addEventListener("error", showTextFallback, {
+                once: true
+            });
+
+            if (image.complete && image.naturalWidth === 0) {
+                showTextFallback();
+            }
+        });
+}
+
 async function handleGeneralClueUnlock(button) {
     if (state.solved || button.disabled) return;
     const clueKey = button.dataset.clueKey, cost = getClueCost(clueKey);
@@ -727,8 +917,7 @@ async function handleGeneralClueUnlock(button) {
             state.revealedClues.set(clueKey, clue.value), state.manuallyUnlockedClues.add(clueKey), 
             state.hintsUsed += 1, renderGeneralClues(), renderHistoryTable(), saveProgress(), updateProgressUI();
             if ("retired" === clueKey) {
-                const latestSlot = getLatestHistorySlot(), isRetired = parseRetiredStatus(clue.value), latestCost = latestSlot ? getHistoryHintCost(latestSlot.id) : getHistoryHintCost();
-                showToast(isRetired ? `Career status: Retired. Latest entry remains ${formatPointCost(latestCost)}.` : `Career status: Active. Latest entry now costs ${formatPointCost(latestCost)}.`);
+                showToast(`Career status: ${formatClueValue(clueKey, clue.value)}.`);
             } else showToast(`${getClueDisplayName(clueKey)} unlocked for ${formatPointCost(cost)}.`);
         } catch (error) {
             console.error(error), refundPoints(cost), button.disabled = !1, renderGeneralClues(), renderHistoryTable(), updateProgressUI(), showToast("That clue could not be unlocked. Your points were refunded.");
@@ -888,18 +1077,69 @@ function moveSuggestion(direction) {
 }
 
 async function handleGuess(event) {
-    if (event.preventDefault(), state.solved) return;
+    event.preventDefault();
+
+    if (state.solved) return;
+
     const guess = elements.guessInput.value.trim();
-    if (!guess) return setGuessMessage("Type a player's name first.", "error"), void elements.guessInput.focus();
-    elements.submitGuess.disabled = !0, closeSuggestions();
+
+    if (!guess) {
+        setGuessMessage("Type a player's name first.", "error");
+        elements.guessInput.focus();
+        return;
+    }
+
+    elements.submitGuess.disabled = true;
+    closeSuggestions();
+
     try {
         const result = await requestGuessResult(guess);
-        state.attempts += 1, result.correct ? (state.solved = !0, state.revealedName = result.player_name || guess, 
-        state.solveToken = result.solve_token || "", revealPortrait(result), await revealAllPostGameInformation(), 
-        setGuessMessage(`Correct — it is ${state.revealedName}!`, "success"), showToast("Daily player solved. GG!")) : (setGuessMessage(result.message || "Not quite. Check the clues and try again.", "error"), 
-        elements.guessInput.select()), saveProgress(), updateProgressUI();
+        state.attempts += 1;
+
+        if (result.correct) {
+            state.solved = true;
+            state.revealedName = result.player_name || guess;
+            state.solveToken = result.solve_token || "";
+
+            revealPortrait(result);
+            await revealAllPostGameInformation();
+
+            setGuessMessage("");
+            saveProgress();
+            updateProgressUI();
+            showResultDialog();
+            showToast("Daily player solved. GG!");
+            return;
+        }
+
+        const deductedPoints = applyIncorrectGuessPenalty();
+        const baseMessage =
+            result.message ||
+            "Not quite. Check the clues and try again.";
+        const penaltyMessage = deductedPoints > 0
+            ? ` ${deductedPoints} points lost.`
+            : " Your score is already at zero.";
+
+        setGuessMessage(
+            `${baseMessage}${penaltyMessage}`,
+            "error"
+        );
+
+        showToast(
+            deductedPoints > 0
+                ? `Incorrect guess: -${deductedPoints} points.`
+                : "Incorrect guess. Your score is already at zero."
+        );
+
+        elements.guessInput.select();
+        saveProgress();
+        updateProgressUI();
     } catch (error) {
-        console.error(error), setGuessMessage("Your guess could not be checked. Please try again.", "error");
+        console.error(error);
+        setGuessMessage(
+            "Your guess could not be checked. Please try again.",
+            "error"
+        );
     } finally {
         elements.submitGuess.disabled = state.solved;
     }
@@ -950,6 +1190,88 @@ function revealPortrait(result) {
     elements.shareButton.disabled = false;
 }
 
+
+function updateResultDialogUI() {
+    if (!elements.resultDialog) return;
+
+    const playerName = state.revealedName || "Correct player";
+    const imageUrl = state.revealedImageUrl || createDemoPortrait(playerName);
+    const pointsSpent = getPointsSpent();
+    const scorePercent = Math.max(
+        0,
+        Math.min(
+            100,
+            Math.round(
+                state.pointsRemaining /
+                Math.max(1, CONFIG.startingPoints) *
+                100
+            )
+        )
+    );
+    const guessNoun = state.attempts === 1 ? "guess" : "guesses";
+    const hintNoun = state.hintsUsed === 1 ? "hint" : "hints";
+
+    elements.resultPlayerName.textContent = playerName;
+    elements.resultChallengeLabel.textContent = state.player?.game_number
+        ? `Challenge #${state.player.game_number} complete`
+        : "Daily challenge complete";
+    elements.resultPointsRemaining.textContent = String(state.pointsRemaining);
+    elements.resultStartingPoints.textContent = String(CONFIG.startingPoints);
+    elements.resultProgressFill.style.width = `${scorePercent}%`;
+    elements.resultScoreKept.textContent = `${scorePercent}%`;
+    elements.resultPointsSpent.textContent = String(pointsSpent);
+    elements.resultAttempts.textContent = String(state.attempts);
+    elements.resultHints.textContent = String(state.hintsUsed);
+    elements.resultHistory.textContent = String(
+        state.manuallyUnlockedHistoryIds.size
+    );
+    elements.resultSummary.textContent =
+        `Solved in ${state.attempts} ${guessNoun} with ` +
+        `${state.hintsUsed} ${hintNoun} purchased.`;
+
+    elements.resultPlayerImage.onerror = () => {
+        console.error(
+            "Result portrait failed to load:",
+            elements.resultPlayerImage.currentSrc ||
+            elements.resultPlayerImage.src
+        );
+
+        elements.resultPlayerImage.onerror = null;
+        elements.resultPlayerImage.src = createDemoPortrait(playerName);
+    };
+
+    if (elements.resultPlayerImage.src !== imageUrl) {
+        elements.resultPlayerImage.src = imageUrl;
+    }
+
+    elements.resultPlayerImage.alt = `${playerName} portrait`;
+}
+
+function showResultDialog() {
+    if (!state.solved || !elements.resultDialog) return;
+
+    updateResultDialogUI();
+
+    if (!elements.resultDialog.open) {
+        elements.resultDialog.showModal();
+    }
+}
+
+function closeResultDialog({showRecap = false} = {}) {
+    if (elements.resultDialog?.open) {
+        elements.resultDialog.close();
+    }
+
+    if (showRecap) {
+        window.requestAnimationFrame(() => {
+            elements.playerCard.scrollIntoView({
+                behavior: "smooth",
+                block: "start"
+            });
+        });
+    }
+}
+
 async function revealAllPostGameInformation() {
     try {
         const postGameData = await requestPostGameClues();
@@ -975,6 +1297,22 @@ function updateProgressUI() {
     elements.topPoints.textContent = String(state.pointsRemaining), elements.pointsRemaining.textContent = String(state.pointsRemaining), 
     elements.startingPoints.textContent = String(CONFIG.startingPoints), elements.pointsSpent.textContent = String(pointsSpent), 
     elements.progressFill.style.width = `${pointsPercent}%`;
+
+    elements.progressCard?.classList.toggle("is-complete", state.solved);
+
+    if (elements.progressStatus) {
+        elements.progressStatus.textContent = state.solved ? "Solved" : "In progress";
+        elements.progressStatus.classList.toggle("is-complete", state.solved);
+    }
+
+    if (elements.viewResultButton) {
+        elements.viewResultButton.hidden = !state.solved;
+    }
+
+    if (state.solved) {
+        updateResultDialogUI();
+    }
+
     renderGeneralClues(), renderHistoryTable();
     if (state.solved) {
         const noun = 1 === state.attempts ? "guess" : "guesses", hintNoun = 1 === state.hintsUsed ? "hint" : "hints";
@@ -982,8 +1320,12 @@ function updateProgressUI() {
     }
     if (0 === state.pointsRemaining) return void (elements.progressText.textContent = "No points left — every remaining clue is locked. Trust your read.");
     if (0 === pointsSpent) return void (elements.progressText.textContent = "Your full score is still intact.");
-    const latestSlot = getLatestHistorySlot(), latestCost = latestSlot ? getHistoryHintCost(latestSlot.id) : getHistoryHintCost();
-    if (latestSlot && isActiveLatestHistory(latestSlot.id) && state.pointsRemaining < latestCost) return void (elements.progressText.textContent = `The active-player latest entry now costs ${latestCost} points and is out of reach.`);
+    const latestSlot = getLatestHistorySlot();
+    const latestCost = latestSlot ? getHistoryHintCost(latestSlot.id) : getHistoryHintCost();
+    const latestHistoryIsLocked = latestSlot && !state.revealedHistory.has(Number(latestSlot.id));
+    if (latestHistoryIsLocked && state.pointsRemaining < latestCost && state.pointsRemaining >= getHistoryHintCost()) {
+        return void (elements.progressText.textContent = `The latest history entry costs ${latestCost} points and is currently out of reach.`);
+    }
     if (state.pointsRemaining < getHistoryHintCost()) return void (elements.progressText.textContent = "History hints are out of reach, but cheaper clues may still be available.");
     elements.progressText.textContent = `${state.pointsRemaining} points remain. Spend only what moves you closer.`;
 }
@@ -1048,6 +1390,18 @@ elements.guessInput.addEventListener("focus", renderSuggestions), elements.guess
     elements.helpDialog.close();
 }), elements.helpDialog.addEventListener("click", event => {
     event.target === elements.helpDialog && elements.helpDialog.close();
+}), elements.viewResultButton.addEventListener("click", showResultDialog),
+elements.closeResultButton.addEventListener("click", () => {
+    closeResultDialog();
+}), elements.resultRecapButton.addEventListener("click", () => {
+    closeResultDialog({
+        showRecap: true
+    });
+}), elements.resultShareButton.addEventListener("click", shareResult),
+elements.resultDialog.addEventListener("click", event => {
+    if (event.target === elements.resultDialog) {
+        closeResultDialog();
+    }
 }), elements.themeButton.addEventListener("click", () => {
     setTheme("light" === document.documentElement.dataset.theme ? "dark" : "light");
 }), elements.shareButton.addEventListener("click", shareResult), initializeTheme(), 
