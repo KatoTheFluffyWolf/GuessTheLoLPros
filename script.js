@@ -1,5 +1,13 @@
 "use strict";
 
+function trackAnalyticsEvent(eventName, parameters = {}) {
+    if (typeof window.gtag !== "function") {
+        return;
+    }
+
+    window.gtag("event", eventName, parameters);
+}
+
 const CONFIG = {
     apiBaseUrl: "https://pnhyxe4nebxsrufkcanvsufpiu0pyjta.lambda-url.ap-southeast-2.on.aws",
     leaguepediaFileRedirectBaseUrl: "https://lol.fandom.com/wiki/Special:Redirect/file/",
@@ -531,18 +539,41 @@ function demoDelay(milliseconds = 180) {
 }
 
 async function loadGame() {
-    elements.playerCard.setAttribute("aria-busy", "true");
-    try {
-        const data = await requestInitialGame();
-        state.player = data.player, state.playerNames = data.playerNames, removeOldGameSessions(), 
-        restoreProgress(), renderBaseGame(), state.solved ? await restoreSolvedGame() : await restoreUnlockedHints(), 
-        updateProgressUI();
-    } catch (error) {
-        console.error(error), setGuessMessage("The daily player could not be loaded. Please try again later.", "error"), 
-        elements.submitGuess.disabled = !0;
-    } finally {
-        elements.playerCard.setAttribute("aria-busy", "false");
+  elements.playerCard.setAttribute("aria-busy", "true");
+
+  try {
+    const data = await requestInitialGame();
+
+    state.player = data.player;
+    state.playerNames = data.playerNames;
+
+    removeOldGameSessions();
+    restoreProgress();
+    renderBaseGame();
+
+    if (state.solved) {
+      await restoreSolvedGame();
+    } else {
+      await restoreUnlockedHints();
     }
+
+    updateProgressUI();
+
+    trackAnalyticsEvent("game_started", {
+      game_number: state.player?.game_number || 0,
+      resumed_game:
+        state.attempts > 0 || state.hintsUsed > 0 ? "yes" : "no",
+    });
+  } catch (error) {
+    console.error(error);
+    setGuessMessage(
+      "The daily player could not be loaded. Please try again later.",
+      "error",
+    );
+    elements.submitGuess.disabled = true;
+  } finally {
+    elements.playerCard.setAttribute("aria-busy", "false");
+  }
 }
 
 function renderBaseGame() {
@@ -1128,12 +1159,23 @@ async function handleGuess(event) {
     try {
         const result = await requestGuessResult(guess);
         state.attempts += 1;
-
+        
+        trackAnalyticsEvent("guess_submitted", {
+          correct: result.correct ? "yes" : "no",
+          attempt_number: state.attempts,
+        });
         if (result.correct) {
             state.solved = true;
             state.revealedName = result.player_name || guess;
             state.solveToken = result.solve_token || "";
 
+            trackAnalyticsEvent("game_completed", {
+                  result: "won",
+                  guesses_used: state.attempts,
+                  final_score: state.pointsRemaining,
+                  hints_used: state.hintsUsed,
+                });
+            
             revealPortrait(result);
             await revealAllPostGameInformation();
 
@@ -1368,16 +1410,43 @@ function setGuessMessage(message, type = "") {
 }
 
 async function shareResult() {
-    const text = [ `RiftGuess #${state.player?.game_number || "Daily"}`, `${state.pointsRemaining}/${CONFIG.startingPoints} points remaining`, `Solved in ${state.attempts} ${1 === state.attempts ? "guess" : "guesses"}`, `${state.hintsUsed} ${1 === state.hintsUsed ? "hint" : "hints"} purchased`, "Can you guess today's LoL pro?" ].join("\n");
-    try {
-        if (navigator.share) return void await navigator.share({
-            title: "RiftGuess",
-            text: text
-        });
-        await navigator.clipboard.writeText(text), showToast("Result copied to clipboard.");
-    } catch (error) {
-        "AbortError" !== error?.name && (console.error(error), showToast("Could not share the result."));
+  const text = [
+    `RiftGuess #${state.player?.game_number || "Daily"}`,
+    `${state.pointsRemaining}/${CONFIG.startingPoints} points remaining`,
+    `Solved in ${state.attempts} ${
+      state.attempts === 1 ? "guess" : "guesses"
+    }`,
+    `${state.hintsUsed} ${state.hintsUsed === 1 ? "hint" : "hints"} purchased`,
+    "Can you guess today's LoL pro?",
+  ].join("\n");
+
+  try {
+    if (navigator.share) {
+      await navigator.share({
+        title: "RiftGuess",
+        text,
+      });
+
+      trackAnalyticsEvent("result_shared", {
+        share_method: "native_share",
+      });
+
+      return;
     }
+
+    await navigator.clipboard.writeText(text);
+
+    trackAnalyticsEvent("result_shared", {
+      share_method: "clipboard",
+    });
+
+    showToast("Result copied to clipboard.");
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      console.error(error);
+      showToast("Could not share the result.");
+    }
+  }
 }
 
 function showToast(message) {
