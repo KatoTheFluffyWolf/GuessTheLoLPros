@@ -384,19 +384,52 @@ function restoreProgress() {
 }
 
 async function fetchJson(path, options = {}) {
-    const {headers: suppliedHeaders = {}, ...fetchOptions} = options, response = await fetch(`${CONFIG.apiBaseUrl}${path}`, {
-        cache: "no-store",
-        ...fetchOptions,
-        headers: {
-            "Content-Type": "application/json",
-            ...suppliedHeaders
-        }
-    });
-    if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message || `Request failed with status ${response.status}`);
+  const {
+    headers: suppliedHeaders = {},
+    body,
+    ...fetchOptions
+  } = options;
+
+  const headers = {
+    Accept: "application/json",
+    ...suppliedHeaders,
+  };
+
+  /*
+   * Only send Content-Type when there is actually a request body.
+   * GET requests will therefore avoid an unnecessary CORS preflight.
+   */
+  if (body !== undefined && body !== null) {
+    const alreadyHasContentType = Object.keys(headers).some(
+      (headerName) =>
+        headerName.toLowerCase() === "content-type",
+    );
+
+    if (!alreadyHasContentType) {
+      headers["Content-Type"] = "application/json";
     }
-    return response.json();
+  }
+
+  const response = await fetch(
+    `${CONFIG.apiBaseUrl}${path}`,
+    {
+      cache: "no-store",
+      ...fetchOptions,
+      body,
+      headers,
+    },
+  );
+
+  if (!response.ok) {
+    const message = await response.text();
+
+    throw new Error(
+      message ||
+        `Request failed with status ${response.status}`,
+    );
+  }
+
+  return response.json();
 }
 
 async function requestInitialGame() {
