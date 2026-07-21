@@ -149,7 +149,7 @@ const CONFIG = {
 
 let toastTimer;
 
-function normalizeName(value) {
+  function normalizeName(value) {
     return String(value).trim().toLocaleLowerCase().replace(/\s+/g, " ");
 }
 
