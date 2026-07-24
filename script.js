@@ -441,15 +441,45 @@ async function fetchJson(path, options = {}) {
 }
 
 async function requestInitialGame() {
-    if (CONFIG.useDemoData || !CONFIG.apiBaseUrl) return {
-        player: createPublicDemoPayload(),
-        playerNames: DEMO_PLAYERS
-    };
-    const [player, playerNamesResponse] = await Promise.all([ fetchJson("/api/daily-player"), fetchJson("/api/player-names") ]);
+  if (CONFIG.useDemoData || !CONFIG.apiBaseUrl) {
     return {
-        player: player,
-        playerNames: Array.isArray(playerNamesResponse) ? playerNamesResponse : playerNamesResponse.players || []
+      player: createPublicDemoPayload(),
+      playerNames: DEMO_PLAYERS,
     };
+  }
+
+  /*
+   * Load the essential daily-player data first.
+   *
+   * This allows the first request to initialize the Lambda before
+   * the player-name request is sent, reducing simultaneous cold starts.
+   */
+  const player = await fetchJson("/api/daily-player");
+
+  let playerNames = [];
+
+  try {
+    const playerNamesResponse =
+      await fetchJson("/api/player-names");
+
+    playerNames = Array.isArray(playerNamesResponse)
+      ? playerNamesResponse
+      : playerNamesResponse.players || [];
+  } catch (error) {
+    /*
+     * The game can still load without autocomplete suggestions.
+     * Players can continue typing guesses manually.
+     */
+    console.warn(
+      "Player names could not be loaded.",
+      error,
+    );
+  }
+
+  return {
+    player,
+    playerNames,
+  };
 }
 
 async function requestGameState() {
