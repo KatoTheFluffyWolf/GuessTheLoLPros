@@ -685,7 +685,7 @@ async function restoreSolvedGame() {
 
     revealPortrait({
         player_name: state.revealedName || postGameData?.player_name || "Correct player",
-        image_url: state.revealedImageUrl || postGameData?.image_url || ""
+        image_url: postGameData?.image_url || state.revealedImageUrl || ""
     });
 
     setGuessMessage("");
@@ -1259,8 +1259,18 @@ async function handleGuess(event) {
                   hints_used: state.hintsUsed,
                 });
             
-            revealPortrait(result);
-            await revealAllPostGameInformation();
+            const postGameData = await revealAllPostGameInformation();
+
+            revealPortrait({
+                player_name:
+                    postGameData?.player_name ||
+                    result.player_name ||
+                    state.revealedName,
+                image_url:
+                    postGameData?.image_url ||
+                    result.image_url ||
+                    ""
+            });
 
             setGuessMessage("");
             saveProgress();
@@ -1285,8 +1295,18 @@ async function handleGuess(event) {
                 hints_used: state.hintsUsed,
             });
 
-            revealPortrait(result);
-            await revealAllPostGameInformation();
+            const postGameData = await revealAllPostGameInformation();
+
+            revealPortrait({
+                player_name:
+                    postGameData?.player_name ||
+                    result.player_name ||
+                    state.revealedName,
+                image_url:
+                    postGameData?.image_url ||
+                    result.image_url ||
+                    ""
+            });
 
             setGuessMessage("");
             saveProgress();
